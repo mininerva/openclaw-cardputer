@@ -27,11 +27,11 @@
 #include "config_manager.h"
 #include "settings_menu.h"
 
-// Avatar system - DISABLED: See docs/AVATAR_BLOCKERS.md
-// #include "avatar/procedural_avatar.h"
-// #include "avatar/ancient_ritual.h"
-// #include "avatar/easter_eggs.h"
-// #include "avatar/voice_synthesis.h"
+// Avatar system
+#include "avatar/procedural_avatar.h"
+#include "avatar/ancient_ritual.h"
+// #include "avatar/easter_eggs.h"  // Optional
+// #include "avatar/voice_synthesis.h"  // Optional - needs TTS
 
 using namespace OpenClaw;
 

@@ -12,12 +12,9 @@
 #include <Arduino.h>
 #include <M5Cardputer.h>
 #include <WiFi.h>
-#include "keyboard_input.h"
+#include "keyboard_handler.h"
 
 namespace Avatar {
-
-// Import SpecialKey from OpenClaw namespace
-using OpenClaw::SpecialKey;
 
 // =============================================================================
 // Ancient Trigger Types
@@ -56,17 +53,8 @@ enum class RitualState {
 // =============================================================================
 
 constexpr uint8_t KONAMI_LENGTH = 10;
-constexpr SpecialKey KONAMI_SEQUENCE[KONAMI_LENGTH] = {
-    SpecialKey::UP,
-    SpecialKey::UP,
-    SpecialKey::DOWN,
-    SpecialKey::DOWN,
-    SpecialKey::LEFT,
-    SpecialKey::RIGHT,
-    SpecialKey::LEFT,
-    SpecialKey::RIGHT,
-    SpecialKey::FUNCTION_1,  // B
-    SpecialKey::FUNCTION_2   // A
+constexpr char KONAMI_SEQUENCE[KONAMI_LENGTH] = {
+    'w', 'w', 's', 's', 'a', 'd', 'a', 'd', 'b', 'a'  // ↑↑↓↓←→←→BA on Cardputer
 };
 
 // =============================================================================
@@ -121,7 +109,7 @@ public:
      * @param key Key event
      * @return true if konami code completed
      */
-    bool processKonamiKey(SpecialKey key);
+    bool processKonamiKey(char key);
     
     /**
      * @brief Reset ritual state

@@ -119,7 +119,7 @@ bool AncientRitual::checkVoicePhrase(const char* text) {
     return false;
 }
 
-bool AncientRitual::processKonamiKey(SpecialKey key) {
+bool AncientRitual::processKonamiKey(char key) {
     uint32_t now = millis();
     
     // Reset if timeout
