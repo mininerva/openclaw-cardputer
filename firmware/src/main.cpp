@@ -814,10 +814,8 @@ void renderAvatar() {
 // =============================================================================
 
 void updateDisplay() {
-    // Render avatar
+    // Only render - UI handles its own clearing
     renderAvatar();
-    
-    // Render UI on top
     g_app.display.renderMainScreen();
 }
 

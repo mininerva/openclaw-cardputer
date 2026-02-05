@@ -210,6 +210,10 @@ void DisplayRenderer::renderErrorScreen(const char* error) {
 
 void DisplayRenderer::renderMainScreen() {
     if (!needs_redraw_) return;
+    
+    // Clear screen before rendering
+    M5Cardputer.Display.fillScreen(Colors::BACKGROUND);
+    
     renderStatusBar();
     renderMessages();
     renderInputArea();
