@@ -503,6 +503,11 @@ void onStateChange(AppState from, AppState to) {
 
     g_app.context.state.current_state = to;
 
+    // Clear screen when leaving boot state
+    if (from == AppState::BOOT) {
+        M5Cardputer.Display.fillScreen(Colors::BACKGROUND);
+    }
+
     // Update display based on state
     switch (to) {
         case AppState::WIFI_CONNECTING:
@@ -809,10 +814,13 @@ void renderAvatar() {
 // =============================================================================
 
 void updateDisplay() {
-    // Render avatar first (background layer)
+    // Clear display first to prevent artifacts
+    M5Cardputer.Display.fillScreen(Colors::BACKGROUND);
+    
+    // Render avatar
     renderAvatar();
     
-    // Redraw display UI on top
+    // Render UI on top (only if needed)
     g_app.display.renderMainScreen();
 }
 
