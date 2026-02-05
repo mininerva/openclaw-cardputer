@@ -76,6 +76,15 @@ void ProceduralAvatar::update(float deltaMs) {
     
     // Update rune animation
     runePhase_ += deltaMs * 0.001f;
+    
+    // Idle micro-animations
+    if (currentMood_ == Mood::IDLE) {
+        // Occasional ear twitch (random, rare)
+        if (random(1000) == 0) {  // 0.1% chance per frame
+            // Trigger ear twitch (subtle scale pulse)
+            breath_.rate *= 1.5f;
+        }
+    }
 }
 
 void ProceduralAvatar::render() {

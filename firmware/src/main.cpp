@@ -30,6 +30,7 @@
 // Avatar system
 #include "avatar/procedural_avatar.h"
 #include "avatar/ancient_ritual.h"
+#include "avatar_audio_bridge.h"
 // #include "avatar/easter_eggs.h"  // Optional
 // #include "avatar/voice_synthesis.h"  // Optional - needs TTS
 
@@ -66,6 +67,7 @@ struct Application {
     AppContext context;
     ConfigManager config_manager;
     SettingsMenu settings_menu;
+    AvatarAudioBridge avatar_bridge;  // NEW: Audio-to-avatar lip-sync
 
     // Configuration
     WebSocketConfig ws_config;
@@ -177,6 +179,12 @@ void setup() {
     // Initialize settings menu
     g_app.settings_menu.begin(&g_app.config_manager, &g_app.display);
 
+    // Initialize avatar (using M5Cardputer's display)
+    Avatar::g_avatar.begin(&M5Cardputer.Display);
+    
+    // Initialize audio-to-avatar bridge
+    g_app.avatar_bridge.begin(&g_app.audio, &Avatar::g_avatar);
+
     g_app.initialized = true;
 
     Serial.println("Setup complete");
@@ -197,6 +205,7 @@ void loop() {
     g_app.audio.update();
     g_app.websocket.update();
     g_app.state_machine.update();
+    g_app.avatar_bridge.update();  // Update lip-sync
 
     // Update settings menu if open
     if (g_app.settings_menu.isOpen()) {
@@ -757,14 +766,26 @@ void updateWiFiStatus() {
 }
 
 // =============================================================================
+// Avatar Rendering
+// =============================================================================
+
+void renderAvatar() {
+    // Update avatar animation
+    Avatar::g_avatar.update(33.0f);  // ~30 FPS
+    
+    // Render to display
+    Avatar::g_avatar.render();
+}
+
+// =============================================================================
 // Display Management
 // =============================================================================
 
 void updateDisplay() {
-    // Update avatar animation if needed
-    // This would call into the avatar system
-
-    // Redraw display
+    // Render avatar first (background layer)
+    renderAvatar();
+    
+    // Redraw display UI on top
     g_app.display.renderMainScreen();
 }
 
