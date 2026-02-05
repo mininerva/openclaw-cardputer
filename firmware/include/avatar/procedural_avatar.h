@@ -119,6 +119,11 @@ public:
     void triggerError();
     
     /**
+     * @brief Check if avatar is ready to render
+     */
+    bool isReady() const { return initialized_; }
+    
+    /**
      * @brief Get current mood parameters (for external use)
      */
     const MoodParams& getCurrentParams() const { return currentParams_; }

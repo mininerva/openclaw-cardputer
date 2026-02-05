@@ -4,6 +4,7 @@
  */
 
 #include "avatar/voice_synthesis.h"
+#include "avatar/ancient_ritual.h"
 #include <cstring>
 
 namespace Avatar {

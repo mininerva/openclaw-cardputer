@@ -27,7 +27,7 @@
 #include "config_manager.h"
 #include "settings_menu.h"
 
-// Avatar disabled for now - needs fixes
+// Avatar system - DISABLED: See docs/AVATAR_BLOCKERS.md
 // #include "avatar/procedural_avatar.h"
 // #include "avatar/ancient_ritual.h"
 // #include "avatar/easter_eggs.h"

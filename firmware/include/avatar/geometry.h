@@ -61,8 +61,8 @@ inline float smoothstep(float edge0, float edge1, float x) {
 // 2D Vector for positions
 struct Vec2 {
     float x, y;
-    Vec2() : x(0), y(0) {}
-    Vec2(float x, float y) : x(x), y(y) {}
+    constexpr Vec2() : x(0), y(0) {}
+    constexpr Vec2(float x, float y) : x(x), y(y) {}
     
     Vec2 operator+(const Vec2& o) const { return Vec2(x + o.x, y + o.y); }
     Vec2 operator-(const Vec2& o) const { return Vec2(x - o.x, y - o.y); }
