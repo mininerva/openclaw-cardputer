@@ -31,9 +31,12 @@ bool ConfigManager::begin() {
     
     initialized_ = true;
     
-    // Try to load existing config
-    if (!load()) {
-        // Save defaults if no config exists
+    // Only save defaults if config file doesn't exist
+    File config_file = LittleFS.open(CONFIG_FILE, "r");
+    bool config_exists = config_file;
+    if (config_file) config_file.close();
+    
+    if (!config_exists) {
         save();
     }
     
