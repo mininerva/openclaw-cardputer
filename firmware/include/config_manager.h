@@ -74,7 +74,7 @@ struct DeviceConfig {
 /**
  * @brief Audio configuration structure
  */
-struct AudioConfig {
+struct AudioSettings {
     uint16_t sample_rate = DEFAULT_SAMPLE_RATE;
     uint8_t frame_duration_ms = DEFAULT_FRAME_DURATION_MS;
     String codec = "opus";  // "opus" or "pcm"
@@ -95,10 +95,10 @@ struct AppConfig {
     WiFiConfig wifi;
     GatewayConfig gateway;
     DeviceConfig device;
-    AudioConfig audio;
-    
+    AudioSettings audio;
+
     bool isValid() const {
-        return wifi.isValid() && gateway.isValid() && 
+        return wifi.isValid() && gateway.isValid() &&
                device.isValid() && audio.isValid();
     }
 };
@@ -160,12 +160,12 @@ public:
     const WiFiConfig& wifi() const { return config_.wifi; }
     const GatewayConfig& gateway() const { return config_.gateway; }
     const DeviceConfig& device() const { return config_.device; }
-    const AudioConfig& audio() const { return config_.audio; }
-    
+    const AudioSettings& audio() const { return config_.audio; }
+
     WiFiConfig& wifi() { return config_.wifi; }
     GatewayConfig& gateway() { return config_.gateway; }
     DeviceConfig& device() { return config_.device; }
-    AudioConfig& audio() { return config_.audio; }
+    AudioSettings& audio() { return config_.audio; }
     
     /**
      * @brief Get the last error message

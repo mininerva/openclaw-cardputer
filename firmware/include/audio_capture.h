@@ -102,7 +102,7 @@ public:
      * @param config Audio configuration
      * @return true if initialization successful
      */
-    bool begin(const AudioConfig& config);
+    bool begin(const AudioSettings& config);
     
     /**
      * @brief Start audio capture
@@ -219,7 +219,7 @@ private:
     
     // State
     AudioState state_ = AudioState::IDLE;
-    AudioConfig audio_config_;
+    AudioSettings audio_config_;
     VADConfig vad_config_;
     AudioCaptureCallback* callback_ = nullptr;
     

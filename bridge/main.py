@@ -1,4 +1,4 @@
-/"""
+"""
 OpenClaw Gateway Bridge - Reimplemented
 
 FastAPI server that acts as a bridge between the Cardputer ADV device

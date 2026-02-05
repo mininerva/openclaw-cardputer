@@ -16,7 +16,7 @@ AudioCapture::~AudioCapture() {
     end();
 }
 
-bool AudioCapture::begin(const AudioConfig& config) {
+bool AudioCapture::begin(const AudioSettings& config) {
     if (state_ != AudioState::IDLE) {
         strncpy(last_error_, "AudioCapture already initialized", sizeof(last_error_) - 1);
         return false;

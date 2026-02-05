@@ -35,19 +35,25 @@ A thin client firmware for the M5Stack Cardputer ADV that connects to an OpenCla
 
 2. **Configure WiFi and Gateway**:
    ```bash
-   cp config/config.example.json config/config.json
+   cd firmware/data
    # Edit config.json with your credentials
+   nano config.json
    ```
 
-3. **Build the firmware**:
+3. **Upload config to device** (important!):
    ```bash
    cd firmware
-   pio run
+   pio run --target uploadfs  # Uploads data/ folder to SPIFFS
    ```
 
-4. **Flash to device** (optional - for actual hardware):
+4. **Build and flash the firmware**:
    ```bash
    pio run --target upload
+   ```
+
+5. **Monitor serial output**:
+   ```bash
+   pio run --target monitor
    ```
 
 ### Gateway Bridge Setup
@@ -124,26 +130,29 @@ openclaw-cardputer/
 
 ## Configuration
 
-### Firmware (`config/config.json`)
+### Configuration (`firmware/data/config.json`)
 
 ```json
 {
   "wifi": {
     "ssid": "YourWiFi",
-    "password": "YourPassword"
+    "password": "YourPassword",
+    "dhcp": true
   },
   "gateway": {
-    "url": "ws://your-vps:8765/ws",
-    "fallback_url": "http://your-vps:8765/api"
+    "websocket_url": "ws://your-vps:8765/ws",
+    "fallback_url": "http://your-vps:8765/api",
+    "api_key": ""
   },
   "device": {
     "id": "cardputer-001",
-    "name": "Living Room"
+    "name": "My Cardputer",
+    "display_brightness": 128
   },
   "audio": {
     "sample_rate": 16000,
-    "frame_duration_ms": 60,
-    "codec": "opus"
+    "codec": "opus",
+    "mic_gain": 64
   }
 }
 ```
