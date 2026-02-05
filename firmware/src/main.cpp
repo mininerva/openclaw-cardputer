@@ -814,13 +814,10 @@ void renderAvatar() {
 // =============================================================================
 
 void updateDisplay() {
-    // Clear display first to prevent artifacts
-    M5Cardputer.Display.fillScreen(Colors::BACKGROUND);
-    
     // Render avatar
     renderAvatar();
     
-    // Render UI on top (only if needed)
+    // Render UI on top
     g_app.display.renderMainScreen();
 }
 
