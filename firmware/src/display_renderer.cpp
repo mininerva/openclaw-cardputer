@@ -217,15 +217,60 @@ void DisplayRenderer::renderMainScreen() {
 }
 
 void DisplayRenderer::renderStatusBar() {
-    // Stub implementation
+    // Draw status bar background
+    M5Cardputer.Display.fillRect(0, 0, DISPLAY_WIDTH, STATUS_BAR_HEIGHT, Colors::STATUS_BAR_BG);
+    
+    // Connection status
+    const char* conn_text = "Disconnected";
+    uint16_t conn_color = Colors::STATUS_BAD;
+    if (status_data_.connection == ConnectionIndicator::CONNECTED) {
+        conn_text = "Connected";
+        conn_color = Colors::STATUS_GOOD;
+    } else if (status_data_.connection == ConnectionIndicator::CONNECTING) {
+        conn_text = "Connecting...";
+        conn_color = Colors::STATUS_WARN;
+    }
+    
+    M5Cardputer.Display.setCursor(2, 4);
+    M5Cardputer.Display.setTextColor(conn_color);
+    M5Cardputer.Display.setTextSize(1);
+    M5Cardputer.Display.print(conn_text);
 }
 
 void DisplayRenderer::renderMessages() {
-    // Stub implementation
+    // Show last few messages
+    int16_t y = MESSAGE_AREA_Y;
+    for (const auto& msg : messages_) {
+        if (y + 16 > MESSAGE_AREA_Y + MESSAGE_AREA_HEIGHT) break;
+        
+        uint16_t color = Colors::TEXT_SYSTEM;
+        if (msg.type == DisplayMessageType::USER_MSG) color = Colors::TEXT_USER;
+        else if (msg.type == DisplayMessageType::AI_MSG) color = Colors::TEXT_AI;
+        
+        M5Cardputer.Display.setCursor(4, y);
+        M5Cardputer.Display.setTextColor(color);
+        M5Cardputer.Display.setTextSize(1);
+        M5Cardputer.Display.print(msg.text.c_str());
+        y += 16;
+    }
 }
 
 void DisplayRenderer::renderInputArea() {
-    // Stub implementation
+    // Draw input area background
+    M5Cardputer.Display.fillRect(0, INPUT_AREA_Y, DISPLAY_WIDTH, INPUT_AREA_HEIGHT, Colors::BACKGROUND);
+    M5Cardputer.Display.drawRect(0, INPUT_AREA_Y, DISPLAY_WIDTH, INPUT_AREA_HEIGHT, Colors::TEXT_SYSTEM);
+    
+    // Show current input
+    M5Cardputer.Display.setCursor(4, INPUT_AREA_Y + 4);
+    M5Cardputer.Display.setTextColor(Colors::TEXT_INPUT);
+    M5Cardputer.Display.setTextSize(1);
+    M5Cardputer.Display.print(input_text_.c_str());
+    
+    // Cursor
+    if (cursor_visible_) {
+        int16_t cursor_x = 4 + text_renderer_->getTextWidth(input_text_.substring(0, input_cursor_pos_).c_str());
+        M5Cardputer.Display.fillRect(cursor_x, INPUT_AREA_Y + 2, 8, 10, Colors::CURSOR);
+    }
 }
 
 void DisplayRenderer::setBrightness(uint8_t brightness) {
