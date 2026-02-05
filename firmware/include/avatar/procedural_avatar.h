@@ -69,9 +69,28 @@ public:
     void setMood(Mood mood, float transitionMs = 300);
     
     /**
-     * @brief Get current mood
+     * @brief React to device tilt (from IMU)
+     * @param tiltX -1.0 to 1.0 (left to right)
+     * @param tiltY -1.0 to 1.0 (forward to back)
      */
-    Mood getCurrentMood() const { return currentMood_; }
+    void setTilt(float tiltX, float tiltY);
+    
+    /**
+     * @brief Trigger shake reaction
+     */
+    void onShake();
+    
+    /**
+     * @brief Set sleep mode (face down)
+     * @param sleeping true to sleep, false to wake
+     */
+    void setSleeping(bool sleeping);
+    
+    /**
+     * @brief Set low battery state (hungry owl)
+     * @param low true when battery <20%
+     */
+    void setLowBattery(bool low);
     
     /**
      * @brief Set where the avatar should look
@@ -158,6 +177,14 @@ private:
     AnimatedValue pupilX_{0, 0.1f};
     AnimatedValue pupilY_{0, 0.1f};
     
+    // Head tilt tracking (from IMU)
+    float tiltX_ = 0;
+    float tiltY_ = 0;
+    
+    // Low battery state
+    bool lowBattery_ = false;
+    uint32_t lowBatteryStartTime_ = 0;
+    
     // Timing
     uint32_t lastUpdateTime_ = 0;
     float deltaMs_ = 0;
@@ -174,8 +201,12 @@ private:
     uint16_t customGlowColor_ = 0;
     bool useCustomGlow_ = false;
     
-    // Rune animation for ancient mode
+    // Ancient mode animation phase
     float runePhase_ = 0;
+    
+    // Battery status
+    uint8_t batteryPercent_ = 100;
+    uint32_t lastBatteryCheck_ = 0;
     
     // Rendering methods
     void drawBackground();

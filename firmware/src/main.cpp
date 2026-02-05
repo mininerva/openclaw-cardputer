@@ -31,6 +31,7 @@
 #include "avatar/procedural_avatar.h"
 #include "avatar/ancient_ritual.h"
 #include "avatar_audio_bridge.h"
+#include "avatar_sensors.h"
 // #include "avatar/easter_eggs.h"  // Optional
 // #include "avatar/voice_synthesis.h"  // Optional - needs TTS
 
@@ -182,6 +183,9 @@ void setup() {
     // Initialize avatar (using M5Cardputer's display)
     Avatar::g_avatar.begin(&M5Cardputer.Display);
     
+    // Initialize sensors (IMU)
+    Avatar::g_sensors.begin();
+    
     // Initialize audio-to-avatar bridge
     g_app.avatar_bridge.begin(&g_app.audio, &Avatar::g_avatar);
 
@@ -205,7 +209,30 @@ void loop() {
     g_app.audio.update();
     g_app.websocket.update();
     g_app.state_machine.update();
-    g_app.avatar_bridge.update();  // Update lip-sync
+    g_app.avatar_bridge.update();
+    
+    // Update sensors and react
+    Avatar::g_sensors.update();
+    
+    // Apply sensor reactions to avatar
+    if (Avatar::g_sensors.isShaking()) {
+        Avatar::g_avatar.onShake();
+    }
+    if (Avatar::g_sensors.isFaceDown()) {
+        Avatar::g_avatar.setSleeping(true);
+    } else {
+        Avatar::g_avatar.setSleeping(false);
+        // Apply tilt when awake
+        Avatar::g_avatar.setTilt(Avatar::g_sensors.getTiltX(), 
+                                  Avatar::g_sensors.getTiltY());
+    }
+    
+    // Low battery reaction
+    if (Avatar::g_sensors.isLowBattery()) {
+        Avatar::g_avatar.setLowBattery(true);
+    }
+    
+    // Update lip-sync
 
     // Update settings menu if open
     if (g_app.settings_menu.isOpen()) {

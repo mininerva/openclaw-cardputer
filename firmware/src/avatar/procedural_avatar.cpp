@@ -504,6 +504,10 @@ void ProceduralAvatar::updatePupilPositions() {
     // Get target position based on look source
     Vec2 target = LookPositions::getForSource(lookTarget_);
     
+    // Add IMU tilt offset (curious head tilt effect)
+    target.x += tiltX_ * 0.2f;
+    target.y += tiltY_ * 0.15f;
+    
     // Add subtle drift when idle
     if (currentMood_ == Mood::IDLE && lookTarget_ == InputSource::CENTER) {
         float driftX = std::sin(millis() * 0.0005f) * 0.15f;
@@ -537,5 +541,65 @@ uint16_t ProceduralAvatar::getEyeGlowColor() const {
     }
     return Colors::EYE_GLOW;
 }
+
+} // namespace Avatar
+
+// =============================================================================
+// Sensor Reactions
+// =============================================================================
+
+void Avatar::ProceduralAvatar::setTilt(float tiltX, float tiltY) {
+    // Tilt affects pupil position (curious head tilt effect)
+    // Clamp to reasonable range
+    tiltX_ = std::max(-1.0f, std::min(1.0f, tiltX));
+    tiltY_ = std::max(-1.0f, std::min(1.0f, tiltY));
+    
+    // Add tilt offset to pupil tracking
+    // This makes the owl appear to "lean into" the tilt
+    Vec2 tiltOffset(tiltX_ * 0.2f, tiltY_ * 0.15f);
+    
+    // Store for use in updatePupilPositions
+    // (We'll handle this by modifying the lookTarget)
+}
+
+void Avatar::ProceduralAvatar::onShake() {
+    // Shake triggers annoyed or dizzy mood briefly
+    if (currentMood_ == Mood::IDLE || currentMood_ == Mood::LISTENING) {
+        triggerError();  // Use glitch effect for shake
+        errorStartTime_ = millis() - 500;  // Shorter duration
+    }
+
+}
+void Avatar::ProceduralAvatar::setSleeping(bool sleeping) {
+    if (sleeping) {
+        // Close eyes, slow breathing
+        setMood(Mood::IDLE);  // Could add a SLEEP mood
+        blink_.forceBlink(BlinkType::GLITCH);  // Force closed
+        breath_.setRate(0.15f);  // Slower breathing
+    } else {
+        // Wake up
+        breath_.setRate(0.25f);  // Normal breathing
+        blink_.forceBlink(BlinkType::SLOW);  // Wake blink
+    }
+}
+
+
+void Avatar::ProceduralAvatar::setLowBattery(bool low) {
+    lowBattery_ = low;
+    
+    if (low) {
+        if (!lowBatteryStartTime_) {
+            lowBatteryStartTime_ = millis();
+        }
+        // Hungry owl: tired, slightly annoyed, slower
+        setMood(Mood::IDLE);
+        ruffle_.setActivity(0.3f);  // Less ruffling when tired
+        breath_.setRate(0.18f);  // Slower breathing
+    } else {
+        lowBatteryStartTime_ = 0;
+        // Recover
+        setMood(Mood::IDLE);
+        breath_.setRate(0.25f);
+    }
 
 } // namespace Avatar
