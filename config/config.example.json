@@ -1,0 +1,34 @@
+{
+  "wifi": {
+    "ssid": "YOUR_WIFI_SSID",
+    "password": "YOUR_WIFI_PASSWORD",
+    "dhcp": true,
+    "static_ip": "",
+    "gateway": "",
+    "subnet": "255.255.255.0"
+  },
+  "gateway": {
+    "websocket_url": "ws://your-vps-ip:8765/ws",
+    "fallback_url": "http://your-vps-ip:8765/api",
+    "api_key": "",
+    "reconnect_interval_ms": 5000,
+    "ping_interval_ms": 30000,
+    "connection_timeout_ms": 10000
+  },
+  "device": {
+    "id": "cardputer-001",
+    "name": "My Cardputer",
+    "firmware_version": "1.0.0",
+    "auto_connect": true,
+    "save_history": false,
+    "display_brightness": 128
+  },
+  "audio": {
+    "sample_rate": 16000,
+    "frame_duration_ms": 60,
+    "codec": "opus",
+    "mic_gain": 64,
+    "noise_suppression": true,
+    "auto_gain_control": true
+  }
+}
