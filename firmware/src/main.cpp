@@ -403,11 +403,13 @@ void setupStateMachine() {
     wifi_connecting->addTransition(AppEvent::WIFI_CONNECTED, AppState::GATEWAY_CONNECTING);
     wifi_connecting->addTransition(AppEvent::WIFI_ERROR, AppState::ERROR_STATE);
     wifi_connecting->setTimeout(WIFI_CONNECT_TIMEOUT_MS, AppState::ERROR_STATE);
+    wifi_connecting->setRetryDelay(3000);  // Wait 3s before retrying
 
     // Gateway connecting transitions
     gateway_connecting->addTransition(AppEvent::GATEWAY_CONNECTED, AppState::AUTHENTICATING);
     gateway_connecting->addTransition(AppEvent::GATEWAY_ERROR, AppState::ERROR_STATE);
     gateway_connecting->addTransition(AppEvent::WIFI_DISCONNECTED, AppState::WIFI_CONNECTING);
+    gateway_connecting->setRetryDelay(5000);  // Wait 5s before retrying
 
     // Authenticating transitions
     authenticating->addTransition(AppEvent::AUTHENTICATED, AppState::READY);

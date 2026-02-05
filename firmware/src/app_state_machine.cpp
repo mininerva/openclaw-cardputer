@@ -34,9 +34,20 @@ void State::setTimeout(uint32_t timeout_ms, AppState timeout_state) {
     timeout_state_ = timeout_state;
 }
 
+void State::setRetryDelay(uint32_t delay_ms) {
+    retry_delay_ms_ = delay_ms;
+}
+
 void State::onEntry() {
     entry_time_ = millis();
     last_activity_time_ = entry_time_;
+    
+    // Apply retry delay
+    if (retry_delay_ms_ > 0) {
+        delay(retry_delay_ms_);
+        retry_delay_ms_ = 0;
+    }
+    
     if (entry_action_) {
         entry_action_();
     }

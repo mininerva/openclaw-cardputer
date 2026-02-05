@@ -143,6 +143,7 @@ public:
     
     // Set timeout
     void setTimeout(uint32_t timeout_ms, AppState timeout_state);
+    void setRetryDelay(uint32_t delay_ms);
     
     // Getters
     AppState getId() const { return id_; }
@@ -175,6 +176,7 @@ private:
     
     uint32_t timeout_ms_;
     AppState timeout_state_;
+    uint32_t retry_delay_ms_;
     uint32_t entry_time_;
     uint32_t last_activity_time_;
 };
