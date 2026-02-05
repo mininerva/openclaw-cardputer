@@ -4,7 +4,7 @@
  */
 
 #include "audio_capture.h"
-#include <math>
+#include <cmath>
 
 namespace OpenClaw {
 
@@ -237,7 +237,7 @@ void AudioCapture::captureLoop() {
         
         if (err != ESP_OK) {
             if (callback_) {
-                callback_>onAudioError(err);
+                callback_->onAudioError(err);
             }
             continue;
         }
@@ -262,7 +262,7 @@ void AudioCapture::captureLoop() {
         
         // Notify callback
         if (callback_) {
-            callback_>onAudioFrame(frame);
+            callback_->onAudioFrame(frame);
         }
         
         frame_count_++;
@@ -330,7 +330,7 @@ bool AudioCapture::detectVoiceActivity(const AudioFrame& frame) {
     // Notify callback on state change
     static bool last_voice_state = false;
     if (voice_active_ != last_voice_state && callback_) {
-        callback_>onVoiceActivity(voice_active_);
+        callback_->onVoiceActivity(voice_active_);
         last_voice_state = voice_active_;
     }
     

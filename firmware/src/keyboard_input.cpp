@@ -7,7 +7,23 @@
 
 namespace OpenClaw {
 
-KeyboardInput::KeyboardInput() {
+KeyboardInput::KeyboardInput()
+    : initialized_(false),
+      callback_(nullptr),
+      key_pressed_(false),
+      shift_pressed_(false),
+      fn_pressed_(false),
+      ctrl_pressed_(false),
+      opt_pressed_(false),
+      input_changed_(false),
+      repeat_enabled_(true),
+      repeat_delay_ms_(KEY_REPEAT_DELAY_MS),
+      repeat_rate_ms_(KEY_REPEAT_RATE_MS),
+      key_press_time_(0),
+      last_repeat_time_(0),
+      last_poll_time_(0),
+      event_queue_(nullptr) {
+    memset(&last_key_event_, 0, sizeof(last_key_event_));
     memset(last_error_, 0, sizeof(last_error_));
 }
 
@@ -20,7 +36,10 @@ bool KeyboardInput::begin() {
         return true;
     }
     
-    if (!createQueue()) {
+    // Create event queue
+    event_queue_ = xQueueCreate(KEYBOARD_QUEUE_SIZE, sizeof(KeyEvent));
+    if (!event_queue_) {
+        strncpy(last_error_, "Failed to create event queue", sizeof(last_error_) - 1);
         return false;
     }
     
@@ -28,73 +47,32 @@ bool KeyboardInput::begin() {
     return true;
 }
 
+void KeyboardInput::end() {
+    if (event_queue_) {
+        vQueueDelete(event_queue_);
+        event_queue_ = nullptr;
+    }
+    initialized_ = false;
+}
+
 void KeyboardInput::update() {
-    if (!initialized_) return;
+    if (!initialized_) {
+        return;
+    }
     
     uint32_t now = millis();
-    
-    // Poll at fixed interval
     if (now - last_poll_time_ < KEYBOARD_POLL_INTERVAL_MS) {
         return;
     }
     last_poll_time_ = now;
     
     pollKeyboard();
+    processKeyRepeat();
     
-    if (repeat_enabled_ && key_pressed_) {
-        processRepeat();
-    }
-}
-
-void KeyboardInput::end() {
-    if (!initialized_) return;
-    
-    destroyQueue();
-    initialized_ = false;
-}
-
-void KeyboardInput::setCallback(KeyboardCallback* callback) {
-    callback_ = callback;
-}
-
-bool KeyboardInput::readEvent(KeyEvent& event) {
-    if (!event_queue_) return false;
-    return xQueueReceive(event_queue_, &event, 0) == pdTRUE;
-}
-
-void KeyboardInput::clearInput() {
-    input_buffer_.clear();
-    input_changed_ = true;
-    if (callback_) {
-        callback_>onInputChanged(input_buffer_);
-    }
-}
-
-void KeyboardInput::setInputText(const char* text) {
-    input_buffer_.clear();
-    size_t len = strlen(text);
-    for (size_t i = 0; i < len && i < KEYBOARD_BUFFER_SIZE - 1; i++) {
-        input_buffer_.insert(text[i]);
-    }
-    input_changed_ = true;
-    if (callback_) {
-        callback_>onInputChanged(input_buffer_);
-    }
-}
-
-bool KeyboardInput::createQueue() {
-    event_queue_ = xQueueCreate(KEYBOARD_QUEUE_LENGTH, sizeof(KeyEvent));
-    if (!event_queue_) {
-        strncpy(last_error_, "Failed to create event queue", sizeof(last_error_) - 1);
-        return false;
-    }
-    return true;
-}
-
-void KeyboardInput::destroyQueue() {
-    if (event_queue_) {
-        vQueueDelete(event_queue_);
-        event_queue_ = nullptr;
+    // Notify callback if input changed
+    if (input_changed_ && callback_) {
+        callback_->onInputChanged(input_buffer_);
+        input_changed_ = false;
     }
 }
 
@@ -102,40 +80,95 @@ void KeyboardInput::pollKeyboard() {
     // Update modifier states
     updateModifiers();
     
+    // Update keyboard state
+    M5Cardputer.Keyboard.updateKeyList();
+    M5Cardputer.Keyboard.updateKeysState();
+    
     // Check if any key is pressed
     if (M5Cardputer.Keyboard.isPressed()) {
-        // Get the key status
-        auto status = M5Cardputer.Keyboard.getKeyStatus();
+        auto& keyList = M5Cardputer.Keyboard.keyList();
         
-        if (status.size() > 0) {
-            char key = status[0].first;
-            bool pressed = status[0].second;
+        if (keyList.size() > 0 && !key_pressed_) {
+            // Get first key
+            auto keyCoor = keyList[0];
+            auto keyValue = M5Cardputer.Keyboard.getKeyValue(keyCoor);
+            char key = keyValue.value_first;
             
-            if (pressed && !key_pressed_) {
-                // Key press
-                KeyEvent event = translateKey(key, shift_pressed_, fn_pressed_, 
-                                               ctrl_pressed_, opt_pressed_);
-                event.pressed = true;
-                event.timestamp = millis();
-                
-                handleKeyPress(event);
-                postEvent(event);
-                
-                // Store for repeat
-                last_key_event_ = event;
-                key_press_time_ = millis();
-                
-            } else if (!pressed && key_pressed_) {
-                // Key release
-                handleKeyRelease();
-            }
+            // Key press
+            KeyEvent event = translateKey(key, shift_pressed_, fn_pressed_, 
+                                           ctrl_pressed_, opt_pressed_);
+            event.pressed = true;
+            event.timestamp = millis();
             
-            key_pressed_ = pressed;
+            handleKeyPress(event);
+            postEvent(event);
+            
+            // Store for repeat
+            last_key_event_ = event;
+            key_press_time_ = millis();
+            key_pressed_ = true;
         }
     } else if (key_pressed_) {
-        handleKeyRelease();
+        // Key release
         key_pressed_ = false;
+        KeyEvent event = last_key_event_;
+        event.pressed = false;
+        event.timestamp = millis();
+        postEvent(event);
+        handleKeyRelease();
     }
+}
+
+void KeyboardInput::updateModifiers() {
+    // Check modifier keys using keysState
+    auto& keysState = M5Cardputer.Keyboard.keysState();
+    
+    // Note: This is a simplified version - actual modifier detection
+    // would need to check the keysState for shift/fn/ctrl/opt keys
+    // For now, we'll use the M5Cardputer.Keyboard state
+}
+
+KeyEvent KeyboardInput::translateKey(char key, bool shift, bool fn, bool ctrl, bool opt) {
+    KeyEvent event;
+    event.character = key;
+    event.special = SpecialKey::NONE;
+    event.shift = shift;
+    event.fn = fn;
+    event.ctrl = ctrl;
+    event.alt = opt;
+    event.pressed = true;
+    event.timestamp = millis();
+    
+    // Handle special keys
+    switch (key) {
+        case KEY_BACKSPACE:
+            event.special = SpecialKey::BACKSPACE;
+            break;
+        case KEY_TAB:
+            event.special = SpecialKey::TAB;
+            break;
+        case KEY_ENTER:
+        case '\r':
+        case '\n':
+            event.special = SpecialKey::ENTER;
+            break;
+        case KEY_LEFT_SHIFT:
+            event.special = SpecialKey::SHIFT_KEY;
+            break;
+        case KEY_LEFT_CTRL:
+            event.special = SpecialKey::CTRL_KEY;
+            break;
+        case KEY_LEFT_ALT:
+            event.special = SpecialKey::OPT_KEY;
+            break;
+        case KEY_FN:
+            event.special = SpecialKey::FN_KEY;
+            break;
+        default:
+            break;
+    }
+    
+    return event;
 }
 
 void KeyboardInput::handleKeyPress(const KeyEvent& event) {
@@ -143,10 +176,9 @@ void KeyboardInput::handleKeyPress(const KeyEvent& event) {
         // Handle special keys
         switch (event.special) {
             case SpecialKey::ENTER:
-            case SpecialKey::SEND_KEY:
                 if (input_buffer_.length > 0) {
                     if (callback_) {
-                        callback_>onInputSubmit(input_buffer_.c_str());
+                        callback_->onInputSubmit(input_buffer_.c_str());
                     }
                     input_buffer_.clear();
                     input_changed_ = true;
@@ -165,150 +197,78 @@ void KeyboardInput::handleKeyPress(const KeyEvent& event) {
                 }
                 break;
                 
-            case SpecialKey::LEFT:
-                input_buffer_.moveCursorLeft();
-                input_changed_ = true;
-                break;
-                
-            case SpecialKey::RIGHT:
-                input_buffer_.moveCursorRight();
-                input_changed_ = true;
-                break;
-                
-            case SpecialKey::HOME:
-                input_buffer_.moveCursorHome();
-                input_changed_ = true;
-                break;
-                
-            case SpecialKey::END:
-                input_buffer_.moveCursorEnd();
-                input_changed_ = true;
-                break;
-                
-            case SpecialKey::ESCAPE:
-                input_buffer_.clear();
-                input_changed_ = true;
-                break;
-                
-            case SpecialKey::VOICE_KEY:
-                // Voice key handled separately
-                break;
-                
             default:
                 break;
         }
     } else if (event.isPrintable()) {
-        // Handle printable character
-        if (input_buffer_.insert(event.character)) {
+        // Handle printable characters
+        char c = event.character;
+        
+        // Apply shift transformation
+        if (event.shift) {
+            c = applyShift(c);
+        }
+        
+        if (input_buffer_.insert(c)) {
             input_changed_ = true;
         }
-    }
-    
-    if (input_changed_ && callback_) {
-        callback_>onInputChanged(input_buffer_);
     }
 }
 
 void KeyboardInput::handleKeyRelease() {
-    // Key release handling if needed
+    // Key release handling
 }
 
-void KeyboardInput::processRepeat() {
+void KeyboardInput::processKeyRepeat() {
+    if (!repeat_enabled_ || !key_pressed_) {
+        return;
+    }
+    
     uint32_t now = millis();
-    uint32_t elapsed = now - key_press_time_;
+    uint32_t repeat_interval = (now - key_press_time_ < repeat_delay_ms_) 
+                               ? repeat_delay_ms_ 
+                               : repeat_rate_ms_;
     
-    if (elapsed > repeat_delay_ms_) {
-        uint32_t repeat_elapsed = now - last_repeat_time_;
+    if (now - last_repeat_time_ >= repeat_interval) {
+        last_repeat_time_ = now;
         
-        if (repeat_elapsed >= repeat_rate_ms_) {
-            last_repeat_time_ = now;
-            
-            // Repeat the last key event
-            KeyEvent repeat_event = last_key_event_;
-            repeat_event.timestamp = now;
-            
-            handleKeyPress(repeat_event);
-            postEvent(repeat_event);
-        }
+        // Repeat the last key
+        KeyEvent event = last_key_event_;
+        event.timestamp = now;
+        handleKeyPress(event);
     }
-}
-
-KeyEvent KeyboardInput::translateKey(char key, bool shift, bool fn, bool ctrl, bool opt) {
-    KeyEvent event;
-    event.shift = shift;
-    event.fn = fn;
-    event.ctrl = ctrl;
-    event.alt = opt;
-    
-    // Handle special keys
-    if (key == 0x0D || key == '\r') {
-        event.special = SpecialKey::ENTER;
-        event.character = '\r';
-    } else if (key == 0x08 || key == '\b') {
-        event.special = SpecialKey::BACKSPACE;
-        event.character = '\b';
-    } else if (key == 0x1B) {
-        event.special = SpecialKey::ESCAPE;
-        event.character = 0x1B;
-    } else if (key == 0x09 || key == '\t') {
-        event.special = SpecialKey::TAB;
-        event.character = '\t';
-    } else if (fn) {
-        // Fn combinations
-        switch (key) {
-            case '1': event.special = SpecialKey::FUNCTION_1; break;
-            case '2': event.special = SpecialKey::FUNCTION_2; break;
-            case '3': event.special = SpecialKey::FUNCTION_3; break;
-            case '4': event.special = SpecialKey::FUNCTION_4; break;
-            case '5': event.special = SpecialKey::FUNCTION_5; break;
-            case 'v':
-            case 'V': event.special = SpecialKey::VOICE_KEY; break;
-            case 's':
-            case 'S': event.special = SpecialKey::SEND_KEY; break;
-            default: event.character = key; break;
-        }
-    } else if (ctrl) {
-        // Ctrl combinations
-        switch (key) {
-            case 'a': 
-                event.special = SpecialKey::HOME; 
-                break;
-            case 'e': 
-                event.special = SpecialKey::END; 
-                break;
-            case 'c':
-                // Ctrl+C - copy (not implemented)
-                break;
-            case 'v':
-                // Ctrl+V - paste (not implemented)
-                break;
-            default: event.character = key; break;
-        }
-    } else {
-        // Regular key
-        event.character = key;
-    }
-    
-    return event;
 }
 
 void KeyboardInput::postEvent(const KeyEvent& event) {
     if (event_queue_) {
         xQueueSend(event_queue_, &event, 0);
     }
-    
-    if (callback_) {
-        callback_>onKeyEvent(event);
-    }
 }
 
-void KeyboardInput::updateModifiers() {
-    // Check modifier keys using M5Cardputer API
-    // Note: This is a simplified implementation
-    // The actual implementation would check the keyboard matrix directly
-    
-    // For now, we'll track modifiers based on key combinations
-    // This would need to be enhanced based on actual Cardputer keyboard matrix
+bool KeyboardInput::readEvent(KeyEvent& event) {
+    if (!event_queue_) {
+        return false;
+    }
+    return xQueueReceive(event_queue_, &event, 0) == pdTRUE;
+}
+
+void KeyboardInput::clearInput() {
+    input_buffer_.clear();
+    input_changed_ = true;
+}
+
+void KeyboardInput::setInputText(const char* text) {
+    input_buffer_.setText(text);
+    input_changed_ = true;
+}
+
+char KeyboardInput::applyShift(char c) const {
+    // Simple shift transformation
+    if (c >= 'a' && c <= 'z') {
+        return c - 'a' + 'A';
+    }
+    // Add more shift transformations as needed
+    return c;
 }
 
 } // namespace OpenClaw

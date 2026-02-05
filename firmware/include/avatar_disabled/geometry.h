@@ -89,7 +89,7 @@ void drawFilledCircle(M5GFX* gfx, int16_t cx, int16_t cy, int16_t r,
 /**
  * @brief Draw an anti-aliased circle outline
  */
-void drawAAS Circle(M5GFX* gfx, int16_t cx, int16_t cy, int16_t r, 
+void drawAACircle(M5GFX* gfx, int16_t cx, int16_t cy, int16_t r, 
                      uint16_t color, float thickness = 1.0f);
 
 /**

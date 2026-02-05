@@ -30,13 +30,13 @@ bool DisplayManager::begin(const DeviceConfig& config) {
     }
     
     // Initialize display
-    gfx_>init();
-    gfx_>setRotation(1);  // Landscape
-    gfx_>setBrightness(config.display_brightness);
+    gfx_->init();
+    gfx_->setRotation(1);  // Landscape
+    gfx_->setBrightness(config.display_brightness);
     brightness_ = config.display_brightness;
     
     // Clear screen
-    gfx_>fillScreen(COLOR_BG);
+    gfx_->fillScreen(COLOR_BG);
     
     initialized_ = true;
     return true;
@@ -47,7 +47,7 @@ void DisplayManager::clear() {
     
     messages_.clear();
     scroll_offset_ = 0;
-    gfx_>fillScreen(COLOR_BG);
+    gfx_->fillScreen(COLOR_BG);
     needs_redraw_ = true;
 }
 
@@ -168,74 +168,74 @@ void DisplayManager::scrollToBottom() {
 void DisplayManager::setBrightness(uint8_t brightness) {
     brightness_ = brightness;
     if (gfx_) {
-        gfx_>setBrightness(brightness);
+        gfx_->setBrightness(brightness);
     }
 }
 
 void DisplayManager::showBootScreen(const char* version) {
     if (!gfx_) return;
     
-    gfx_>fillScreen(COLOR_BG);
-    gfx_>setTextColor(COLOR_ACCENT);
-    gfx_>setTextSize(2);
+    gfx_->fillScreen(COLOR_BG);
+    gfx_->setTextColor(COLOR_ACCENT);
+    gfx_->setTextSize(2);
     
     // Draw title
     const char* title = "OpenClaw";
     int16_t title_width = strlen(title) * 12;
-    gfx_>setCursor((DISPLAY_WIDTH - title_width) / 2, 30);
-    gfx_>print(title);
+    gfx_->setCursor((DISPLAY_WIDTH - title_width) / 2, 30);
+    gfx_->print(title);
     
     // Draw subtitle
-    gfx_>setTextColor(COLOR_TEXT);
-    gfx_>setTextSize(1);
+    gfx_->setTextColor(COLOR_TEXT);
+    gfx_->setTextSize(1);
     const char* subtitle = "Cardputer ADV";
     int16_t sub_width = strlen(subtitle) * 6;
-    gfx_>setCursor((DISPLAY_WIDTH - sub_width) / 2, 55);
-    gfx_>print(subtitle);
+    gfx_->setCursor((DISPLAY_WIDTH - sub_width) / 2, 55);
+    gfx_->print(subtitle);
     
     // Draw version
-    gfx_>setTextColor(COLOR_TEXT_DIM);
+    gfx_->setTextColor(COLOR_TEXT_DIM);
     char version_str[32];
     snprintf(version_str, sizeof(version_str), "v%s", version);
     int16_t ver_width = strlen(version_str) * 6;
-    gfx_>setCursor((DISPLAY_WIDTH - ver_width) / 2, 75);
-    gfx_>print(version_str);
+    gfx_->setCursor((DISPLAY_WIDTH - ver_width) / 2, 75);
+    gfx_->print(version_str);
     
     // Draw loading bar frame
-    gfx_>drawRect(40, 100, 160, 10, COLOR_TEXT_DIM);
+    gfx_->drawRect(40, 100, 160, 10, COLOR_TEXT_DIM);
 }
 
 void DisplayManager::showConnectionScreen(const char* ssid) {
     if (!gfx_) return;
     
-    gfx_>fillScreen(COLOR_BG);
-    gfx_>setTextColor(COLOR_TEXT);
-    gfx_>setTextSize(1);
+    gfx_->fillScreen(COLOR_BG);
+    gfx_->setTextColor(COLOR_TEXT);
+    gfx_->setTextSize(1);
     
-    gfx_>setCursor(10, 50);
-    gfx_>print("Connecting to:");
+    gfx_->setCursor(10, 50);
+    gfx_->print("Connecting to:");
     
-    gfx_>setTextColor(COLOR_ACCENT);
-    gfx_>setCursor(10, 70);
-    gfx_>print(ssid);
+    gfx_->setTextColor(COLOR_ACCENT);
+    gfx_->setCursor(10, 70);
+    gfx_->print(ssid);
     
-    gfx_>setTextColor(COLOR_TEXT_DIM);
-    gfx_>setCursor(10, 100);
-    gfx_>print("Please wait...");
+    gfx_->setTextColor(COLOR_TEXT_DIM);
+    gfx_->setCursor(10, 100);
+    gfx_->print("Please wait...");
 }
 
 void DisplayManager::showErrorScreen(const char* error) {
     if (!gfx_) return;
     
-    gfx_>fillScreen(COLOR_BG);
-    gfx_>setTextColor(COLOR_ERROR);
-    gfx_>setTextSize(1);
+    gfx_->fillScreen(COLOR_BG);
+    gfx_->setTextColor(COLOR_ERROR);
+    gfx_->setTextSize(1);
     
-    gfx_>setCursor(10, 50);
-    gfx_>print("Error:");
+    gfx_->setCursor(10, 50);
+    gfx_->print("Error:");
     
-    gfx_>setTextColor(COLOR_TEXT);
-    gfx_>setCursor(10, 70);
+    gfx_->setTextColor(COLOR_TEXT);
+    gfx_->setCursor(10, 70);
     
     // Wrap error text
     std::vector<String> lines;
@@ -243,8 +243,8 @@ void DisplayManager::showErrorScreen(const char* error) {
     int16_t y = 70;
     for (const auto& line : lines) {
         if (y > DISPLAY_HEIGHT - 20) break;
-        gfx_>setCursor(10, y);
-        gfx_>print(line.c_str());
+        gfx_->setCursor(10, y);
+        gfx_->print(line.c_str());
         y += LINE_HEIGHT;
     }
 }
@@ -257,68 +257,68 @@ void DisplayManager::drawStatusBar() {
     if (!gfx_) return;
     
     // Draw status bar background
-    gfx_>fillRect(0, 0, DISPLAY_WIDTH, STATUS_BAR_HEIGHT, COLOR_STATUS_BG);
+    gfx_->fillRect(0, 0, DISPLAY_WIDTH, STATUS_BAR_HEIGHT, COLOR_STATUS_BG);
     
-    gfx_>setTextSize(1);
+    gfx_->setTextSize(1);
     
     // WiFi signal
     int8_t bars = getSignalBars();
-    gfx_>setTextColor(COLOR_TEXT);
-    gfx_>setCursor(2, 4);
+    gfx_->setTextColor(COLOR_TEXT);
+    gfx_->setCursor(2, 4);
     if (bars >= 0) {
-        gfx_>printf("WiFi:%d", bars);
+        gfx_->printf("WiFi:%d", bars);
     } else {
-        gfx_>print("WiFi:X");
+        gfx_->print("WiFi:X");
     }
     
     // Connection status
-    gfx_>setCursor(60, 4);
+    gfx_->setCursor(60, 4);
     switch (conn_status_) {
         case ConnectionStatus::DISCONNECTED:
-            gfx_>setTextColor(COLOR_ERROR);
-            gfx_>print("[--]");
+            gfx_->setTextColor(COLOR_ERROR);
+            gfx_->print("[--]");
             break;
         case ConnectionStatus::CONNECTING:
-            gfx_>setTextColor(COLOR_WARNING);
-            gfx_>print("[..]");
+            gfx_->setTextColor(COLOR_WARNING);
+            gfx_->print("[..]");
             break;
         case ConnectionStatus::CONNECTED:
-            gfx_>setTextColor(COLOR_ACCENT);
-            gfx_>print("[OK]");
+            gfx_->setTextColor(COLOR_ACCENT);
+            gfx_->print("[OK]");
             break;
         case ConnectionStatus::ERROR:
-            gfx_>setTextColor(COLOR_ERROR);
-            gfx_>print("[ER]");
+            gfx_->setTextColor(COLOR_ERROR);
+            gfx_->print("[ER]");
             break;
     }
     
     // Audio status
-    gfx_>setCursor(100, 4);
-    gfx_>setTextColor(COLOR_TEXT);
+    gfx_->setCursor(100, 4);
+    gfx_->setTextColor(COLOR_TEXT);
     switch (audio_status_) {
         case AudioStatus::IDLE:
-            gfx_>print("[  ]");
+            gfx_->print("[  ]");
             break;
         case AudioStatus::LISTENING:
-            gfx_>setTextColor(COLOR_ACCENT);
-            gfx_>print("[oo]");
+            gfx_->setTextColor(COLOR_ACCENT);
+            gfx_->print("[oo]");
             break;
         case AudioStatus::PROCESSING:
-            gfx_>setTextColor(COLOR_WARNING);
-            gfx_>print("[~~]");
+            gfx_->setTextColor(COLOR_WARNING);
+            gfx_->print("[~~]");
             break;
         case AudioStatus::SPEAKING:
-            gfx_>setTextColor(COLOR_ACCENT);
-            gfx_>print("[<>]");
+            gfx_->setTextColor(COLOR_ACCENT);
+            gfx_->print("[<>]");
             break;
     }
     
     // Status message (if active)
     if (show_status_) {
-        gfx_>setTextColor(COLOR_WARNING);
+        gfx_->setTextColor(COLOR_WARNING);
         int16_t msg_x = DISPLAY_WIDTH - (status_message_.length() * 6) - 2;
-        gfx_>setCursor(msg_x, 4);
-        gfx_>print(status_message_.c_str());
+        gfx_->setCursor(msg_x, 4);
+        gfx_->print(status_message_.c_str());
     }
 }
 
@@ -328,10 +328,10 @@ void DisplayManager::drawConversation() {
     // Clear conversation area
     int16_t conv_y = STATUS_BAR_HEIGHT;
     int16_t conv_height = DISPLAY_HEIGHT - STATUS_BAR_HEIGHT - INPUT_AREA_HEIGHT;
-    gfx_>fillRect(0, conv_y, DISPLAY_WIDTH, conv_height, COLOR_BG);
+    gfx_->fillRect(0, conv_y, DISPLAY_WIDTH, conv_height, COLOR_BG);
     
     // Draw messages
-    gfx_>setTextSize(1);
+    gfx_->setTextSize(1);
     int16_t y = conv_y + 2;
     
     int start_idx = scroll_offset_;
@@ -349,25 +349,25 @@ void DisplayManager::drawConversation() {
 }
 
 void DisplayManager::drawMessage(const DisplayMessage& msg, int16_t y) {
-    gfx_>setTextColor(getMessageColor(msg.type));
-    gfx_>setCursor(4, y);
+    gfx_->setTextColor(getMessageColor(msg.type));
+    gfx_->setCursor(4, y);
     
     // Prefix based on type
     switch (msg.type) {
         case MessageType::USER:
-            gfx_>print("> ");
+            gfx_->print("> ");
             break;
         case MessageType::AI:
-            gfx_>print("< ");
+            gfx_->print("< ");
             break;
         case MessageType::SYSTEM:
-            gfx_>print("# ");
+            gfx_->print("# ");
             break;
         case MessageType::ERROR:
-            gfx_>print("! ");
+            gfx_->print("! ");
             break;
         case MessageType::STATUS:
-            gfx_>print("* ");
+            gfx_->print("* ");
             break;
     }
     
@@ -376,7 +376,7 @@ void DisplayManager::drawMessage(const DisplayMessage& msg, int16_t y) {
     if (display_text.length() > 35) {
         display_text = display_text.substring(0, 32) + "...";
     }
-    gfx_>print(display_text.c_str());
+    gfx_->print(display_text.c_str());
 }
 
 void DisplayManager::drawInputArea() {
@@ -385,28 +385,28 @@ void DisplayManager::drawInputArea() {
     int16_t input_y = DISPLAY_HEIGHT - INPUT_AREA_HEIGHT;
     
     // Draw input background
-    gfx_>fillRect(0, input_y, DISPLAY_WIDTH, INPUT_AREA_HEIGHT, COLOR_INPUT_BG);
-    gfx_>drawLine(0, input_y, DISPLAY_WIDTH, input_y, COLOR_TEXT_DIM);
+    gfx_->fillRect(0, input_y, DISPLAY_WIDTH, INPUT_AREA_HEIGHT, COLOR_INPUT_BG);
+    gfx_->drawLine(0, input_y, DISPLAY_WIDTH, input_y, COLOR_TEXT_DIM);
     
     // Draw input text
-    gfx_>setTextColor(COLOR_TEXT);
-    gfx_>setTextSize(1);
-    gfx_>setCursor(4, input_y + 6);
+    gfx_->setTextColor(COLOR_TEXT);
+    gfx_->setTextSize(1);
+    gfx_->setCursor(4, input_y + 6);
     
     // Show cursor indicator
-    gfx_>print("> ");
+    gfx_->print("> ");
     
     // Truncate if too long
     String display_input = input_text_;
     if (display_input.length() > 30) {
         display_input = "..." + display_input.substring(display_input.length() - 27);
     }
-    gfx_>print(display_input.c_str());
+    gfx_->print(display_input.c_str());
     
     // Draw cursor
     if ((millis() / 500) % 2 == 0) {
         int16_t cursor_x = 16 + (display_input.length() * 6);
-        gfx_>fillRect(cursor_x, input_y + 4, 6, 12, COLOR_ACCENT);
+        gfx_->fillRect(cursor_x, input_y + 4, 6, 12, COLOR_ACCENT);
     }
 }
 
@@ -416,7 +416,7 @@ void DisplayManager::drawScrollbar() {
     int16_t scrollbar_x = DISPLAY_WIDTH - SCROLLBAR_WIDTH;
     
     // Draw track
-    gfx_>fillRect(scrollbar_x, conv_y, SCROLLBAR_WIDTH, conv_height, COLOR_STATUS_BG);
+    gfx_->fillRect(scrollbar_x, conv_y, SCROLLBAR_WIDTH, conv_height, COLOR_STATUS_BG);
     
     // Draw thumb
     float thumb_ratio = (float)VISIBLE_LINES / messages_.size();
@@ -426,7 +426,7 @@ void DisplayManager::drawScrollbar() {
     float scroll_ratio = (float)scroll_offset_ / (messages_.size() - VISIBLE_LINES);
     int16_t thumb_y = conv_y + (int16_t)((conv_height - thumb_height) * scroll_ratio);
     
-    gfx_>fillRect(scrollbar_x, thumb_y, SCROLLBAR_WIDTH, thumb_height, COLOR_ACCENT);
+    gfx_->fillRect(scrollbar_x, thumb_y, SCROLLBAR_WIDTH, thumb_height, COLOR_ACCENT);
 }
 
 uint16_t DisplayManager::getMessageColor(MessageType type) {

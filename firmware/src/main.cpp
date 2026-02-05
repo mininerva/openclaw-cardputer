@@ -1,327 +1,182 @@
 /**
  * @file main.cpp
- * @brief OpenClaw Cardputer ADV - Main Application with Procedural Avatar
+ * @brief OpenClaw Cardputer ADV - Reimplemented Main Application
  * 
- * Thin client firmware for M5Stack Cardputer ADV that connects
- * to an OpenClaw gateway for voice and text AI interaction.
- * Features a real-time procedural owl avatar.
+ * A clean, modern implementation using:
+ * - Binary protocol for WebSocket communication
+ * - Improved state machine architecture
+ * - Modular component design
+ * - Efficient audio streaming with Opus codec
+ * - Robust error handling and reconnection
+ * 
+ * Firmware Version: 2.0.0
  */
 
 #include <Arduino.h>
 #include <M5Cardputer.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
-#include <string>
 
-#include "config_manager.h"
-#include "audio_capture.h"
-#include "keyboard_input.h"
-#include "display_manager.h"
-#include "gateway_client.h"
-#include "avatar/procedural_avatar.h"
+// OpenClaw components
+#include "protocol.h"
+#include "websocket_client.h"
+#include "audio_streamer.h"
+#include "keyboard_handler.h"
+#include "display_renderer.h"
+#include "app_state_machine.h"
+
+// Avatar disabled for now - needs fixes
+// #include "avatar/procedural_avatar.h"
+// #include "avatar/ancient_ritual.h"
+// #include "avatar/easter_eggs.h"
+// #include "avatar/voice_synthesis.h"
 
 using namespace OpenClaw;
-using namespace Avatar;
 
 // =============================================================================
-// Constants
+// Constants (defined in platformio.ini build flags)
 // =============================================================================
 
-constexpr const char* FIRMWARE_VERSION = "1.1.0";
-constexpr const char* FIRMWARE_NAME = "OpenClaw Cardputer";
+// FIRMWARE_VERSION, FIRMWARE_NAME, FIRMWARE_CODENAME defined in build flags
+
+// Timing constants
+constexpr uint32_t MAIN_LOOP_DELAY_MS = 10;
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
-constexpr uint32_t MAIN_LOOP_DELAY_MS = 16;  // ~60 FPS for avatar
-constexpr uint32_t AVATAR_UPDATE_MS = 33;    // ~30 FPS avatar update
+constexpr uint32_t DISPLAY_UPDATE_INTERVAL_MS = 33;  // ~30 FPS
+constexpr uint32_t STATUS_UPDATE_INTERVAL_MS = 1000;
 
-// Avatar display region
-constexpr int16_t AVATAR_HEIGHT = 128;
-constexpr int16_t TEXT_AREA_Y = AVATAR_HEIGHT;
-constexpr int16_t TEXT_AREA_HEIGHT = 135 - AVATAR_HEIGHT;
+// Display regions
+constexpr int16_t AVATAR_HEIGHT = 64;
+constexpr int16_t TEXT_AREA_Y = AVATAR_HEIGHT + 16;  // + status bar
 
 // =============================================================================
-// Global State
+// Global Application Context
 // =============================================================================
 
-enum class AppState {
-    BOOT,
-    CONFIG_LOAD,
-    WIFI_CONNECT,
-    GATEWAY_CONNECT,
-    READY,
-    VOICE_INPUT,
-    THINKING,
-    SPEAKING,
-    ERROR,
-    ANCIENT_MODE
-};
-
-struct AppContext {
-    AppState state = AppState::BOOT;
-    AppState previous_state = AppState::BOOT;
-    uint32_t state_enter_time = 0;
+struct Application {
+    // Components
+    WebSocketClient websocket;
+    AudioStreamer audio;
+    KeyboardHandler keyboard;
+    DisplayRenderer display;
+    AppStateMachine state_machine;
+    AppContext context;
     
-    // Managers
-    ConfigManager config;
-    AudioCapture audio;
-    KeyboardInput keyboard;
-    DisplayManager display;
-    GatewayClient gateway;
-    ProceduralAvatar avatar;
+    // Configuration
+    WebSocketConfig ws_config;
+    AudioStreamerConfig audio_config;
+    DisplayConfig display_config;
     
     // Runtime state
-    bool wifi_connected = false;
-    bool gateway_ready = false;
-    bool voice_mode = false;
-    uint32_t last_wifi_reconnect = 0;
-    uint32_t last_activity = 0;
-    uint32_t last_avatar_update = 0;
+    bool initialized;
+    uint32_t last_display_update;
+    uint32_t last_status_update;
+    uint32_t last_wifi_check;
+    uint32_t wifi_connect_start;
     
-    // Audio buffer for voice streaming
-    String audio_buffer;
+    // Ancient mode
+    bool ancient_mode_active;
+    uint32_t ancient_mode_start;
     
-    // Ancient mode trigger
-    bool ancient_mode_active = false;
+    Application() : initialized(false), last_display_update(0),
+                    last_status_update(0), last_wifi_check(0),
+                    wifi_connect_start(0), ancient_mode_active(false),
+                    ancient_mode_start(0) {}
 };
 
-static AppContext g_app;
+static Application g_app;
 
 // =============================================================================
 // Forward Declarations
 // =============================================================================
 
-void changeState(AppState new_state);
-void stateBoot();
-void stateConfigLoad();
-void stateWiFiConnect();
-void stateGatewayConnect();
-void stateReady();
-void stateVoiceInput();
-void stateThinking();
-void stateSpeaking();
-void stateError();
-void stateAncientMode();
+bool loadConfiguration();
+void setupStateMachine();
+void setupWebSocketCallbacks();
+void setupAudioCallbacks();
+void setupKeyboardCallbacks();
+void setupDisplay();
 
 void connectWiFi();
-void disconnectWiFi();
 void updateWiFiStatus();
-void updateAvatar();
+void handleWiFiConnected();
+void handleWiFiDisconnected();
 
-void sendTextMessage(const char* text);
-void sendAudioChunk(const uint8_t* data, size_t len, bool final);
-void handleGatewayMessage(const GatewayMessage& msg);
-void checkAncientModeTrigger(const char* text);
+void onStateChange(AppState from, AppState to);
+void handleSystemEvent(AppEvent event);
 
-// =============================================================================
-// Callback Classes
-// =============================================================================
+void processIncomingMessage(const ProtocolMessage& msg);
+void sendTextToGateway(const char* text);
+void sendAudioToGateway(const EncodedAudioPacket& packet);
 
-class AppKeyboardCallback : public KeyboardCallback {
-public:
-    void onKeyEvent(const KeyEvent& event) override {
-        // Handle special keys
-        if (event.special == SpecialKey::VOICE_KEY) {
-            if (event.pressed) {
-                if (g_app.state == AppState::VOICE_INPUT) {
-                    changeState(AppState::READY);
-                } else {
-                    changeState(AppState::VOICE_INPUT);
-                }
-            }
-            return;
-        }
-        
-        // Ancient mode trigger: Fn+A
-        if (event.fn && event.character == 'a') {
-            if (g_app.state == AppState::ANCIENT_MODE) {
-                changeState(AppState::READY);
-            } else {
-                changeState(AppState::ANCIENT_MODE);
-            }
-            return;
-        }
-        
-        // Look at keyboard when typing
-        if (event.isPrintable() && event.pressed) {
-            g_app.avatar.lookAt(InputSource::KEYBOARD);
-            
-            // Reset look after delay
-            static uint32_t last_type_time = 0;
-            last_type_time = millis();
-        }
-        
-        // Update activity timestamp
-        g_app.last_activity = millis();
-    }
-    
-    void onInputSubmit(const char* text) override {
-        if (strlen(text) == 0) return;
-        
-        // Check for ancient mode trigger phrase
-        checkAncientModeTrigger(text);
-        
-        // Display user message
-        g_app.display.addMessage(text, MessageType::USER);
-        
-        // Avatar looks at user when sending
-        g_app.avatar.lookAt(InputSource::USER);
-        
-        // Send to gateway
-        sendTextMessage(text);
-        
-        g_app.last_activity = millis();
-    }
-    
-    void onInputChanged(const InputBuffer& buffer) override {
-        g_app.display.setInputText(buffer.c_str(), buffer.cursor);
-    }
-};
+void updateDisplay();
+void updateStatusBar();
+void renderAvatar();
 
-class AppAudioCallback : public AudioCaptureCallback {
-public:
-    void onAudioFrame(const AudioFrame& frame) override {
-        if (g_app.state != AppState::VOICE_INPUT) return;
-        
-        // Stream audio to gateway
-        if (frame.voice_detected || frame.num_samples > 0) {
-            // Encode and send
-            g_app.gateway.sendAudioRaw(
-                reinterpret_cast<const uint8_t*>(frame.samples),
-                frame.num_samples * sizeof(int16_t),
-                false
-            );
-        }
-    }
-    
-    void onVoiceActivity(bool detected) override {
-        if (detected) {
-            g_app.display.setAudioStatus(AudioStatus::LISTENING);
-            // Avatar looks at mic when voice detected
-            g_app.avatar.lookAt(InputSource::MIC);
-        } else {
-            g_app.display.setAudioStatus(AudioStatus::IDLE);
-            // Return to center
-            g_app.avatar.lookAt(InputSource::CENTER);
-        }
-    }
-    
-    void onAudioError(int error) override {
-        g_app.display.addMessagef(MessageType::ERROR, "Audio error: %d", error);
-        g_app.avatar.triggerError();
-    }
-};
-
-class AppGatewayCallback : public GatewayClientCallback {
-public:
-    void onConnected() override {
-        g_app.display.addMessage("Gateway connected", MessageType::STATUS);
-    }
-    
-    void onDisconnected(uint16_t code, const char* reason) override {
-        g_app.display.addMessagef(MessageType::STATUS, 
-            "Gateway disconnected: %d", code);
-        g_app.gateway_ready = false;
-        g_app.avatar.setMood(Mood::IDLE);
-    }
-    
-    void onAuthenticated() override {
-        g_app.display.addMessage("Authenticated", MessageType::STATUS);
-        g_app.gateway_ready = true;
-        g_app.avatar.blink(BlinkType::DOUBLE);  // Happy blink
-        changeState(AppState::READY);
-    }
-    
-    void onAuthFailed(const char* error) override {
-        g_app.display.addMessagef(MessageType::ERROR, "Auth failed: %s", error);
-        g_app.avatar.triggerError();
-        changeState(AppState::ERROR);
-    }
-    
-    void onTextResponse(const char* text, bool is_final) override {
-        // Add to display
-        g_app.display.addMessage(text, MessageType::AI);
-        
-        if (is_final) {
-            g_app.display.setAudioStatus(AudioStatus::IDLE);
-            // Avatar speaks the response
-            g_app.avatar.speak(text);
-            changeState(AppState::SPEAKING);
-        } else {
-            g_app.display.setAudioStatus(AudioStatus::PROCESSING);
-            g_app.avatar.setMood(Mood::THINKING);
-            changeState(AppState::THINKING);
-        }
-    }
-    
-    void onAudioResponse(const char* audio_data) override {
-        // Audio response received
-        g_app.display.setAudioStatus(AudioStatus::SPEAKING);
-    }
-    
-    void onError(const char* error) override {
-        g_app.display.addMessagef(MessageType::ERROR, "Gateway error: %s", error);
-        g_app.avatar.triggerError();
-    }
-    
-    void onStateChanged(ConnectionState state) override {
-        switch (state) {
-            case ConnectionState::DISCONNECTED:
-                g_app.display.setConnectionStatus(ConnectionStatus::DISCONNECTED);
-                break;
-            case ConnectionState::CONNECTING:
-            case ConnectionState::RECONNECTING:
-                g_app.display.setConnectionStatus(ConnectionStatus::CONNECTING);
-                g_app.avatar.setMood(Mood::LISTENING);  // Attentive while connecting
-                break;
-            case ConnectionState::CONNECTED:
-            case ConnectionState::AUTHENTICATING:
-                g_app.display.setConnectionStatus(ConnectionStatus::CONNECTING);
-                break;
-            case ConnectionState::AUTHENTICATED:
-                g_app.display.setConnectionStatus(ConnectionStatus::CONNECTED);
-                break;
-            case ConnectionState::ERROR:
-                g_app.display.setConnectionStatus(ConnectionStatus::ERROR);
-                g_app.avatar.triggerError();
-                break;
-        }
-    }
-};
+void enterAncientMode();
+void exitAncientMode();
+bool checkAncientModeTrigger(const char* text);
 
 // =============================================================================
-// Static Callback Instances
-// =============================================================================
-
-static AppKeyboardCallback s_keyboard_callback;
-static AppAudioCallback s_audio_callback;
-static AppGatewayCallback s_gateway_callback;
-
-// =============================================================================
-// Setup and Main Loop
+// Setup
 // =============================================================================
 
 void setup() {
-    // Initialize M5Cardputer
-    auto cfg = M5.config();
-    M5Cardputer.begin(cfg, true);
-    
     // Initialize serial for debugging
     Serial.begin(115200);
     delay(1000);
     
     Serial.println("\n========================================");
     Serial.println(FIRMWARE_NAME);
-    Serial.printf("Version: %s\n", FIRMWARE_VERSION);
-    Serial.println("Procedural Avatar System Enabled");
+    Serial.printf("Version: %s (%s)\n", FIRMWARE_VERSION, FIRMWARE_CODENAME);
     Serial.println("========================================\n");
     
-    // Initialize display early for boot screen
-    g_app.display.begin(DeviceConfig());
-    g_app.display.showBootScreen(FIRMWARE_VERSION);
+    // Initialize M5Cardputer
+    auto cfg = M5.config();
+    M5Cardputer.begin(cfg, true);
     
-    // Set initial state
-    changeState(AppState::BOOT);
+    // Initialize display early for boot screen
+    g_app.display.begin(g_app.display_config);
+    g_app.display.renderBootScreen(FIRMWARE_VERSION);
+    
+    // Load configuration
+    if (!loadConfiguration()) {
+        Serial.println("Failed to load configuration");
+        g_app.display.renderErrorScreen("Config load failed");
+        delay(5000);
+        ESP.restart();
+    }
+    
+    // Setup state machine
+    setupStateMachine();
+    
+    // Initialize components
+    if (!g_app.keyboard.begin()) {
+        Serial.println("Keyboard init failed");
+    }
+    setupKeyboardCallbacks();
+    
+    if (!g_app.audio.begin(g_app.audio_config)) {
+        Serial.println("Audio init failed - continuing without audio");
+    }
+    setupAudioCallbacks();
+    
+    if (!g_app.websocket.begin(g_app.ws_config)) {
+        Serial.println("WebSocket init failed");
+    }
+    setupWebSocketCallbacks();
+    
+    // Start state machine
+    g_app.state_machine.begin();
+    g_app.initialized = true;
+    
+    Serial.println("Setup complete");
 }
+
+// =============================================================================
+// Main Loop
+// =============================================================================
 
 void loop() {
     uint32_t now = millis();
@@ -329,446 +184,568 @@ void loop() {
     // Update M5 systems
     M5Cardputer.update();
     
-    // Update subsystems
+    // Update components
     g_app.keyboard.update();
-    g_app.gateway.update();
-    g_app.display.update();
-    
-    // Update avatar at ~30 FPS
-    if (now - g_app.last_avatar_update >= AVATAR_UPDATE_MS) {
-        updateAvatar();
-        g_app.last_avatar_update = now;
-    }
-    
-    // Process gateway messages
-    GatewayMessage msg;
-    while (g_app.gateway.readMessage(msg)) {
-        handleGatewayMessage(msg);
-    }
-    
-    // State machine
-    switch (g_app.state) {
-        case AppState::BOOT:
-            stateBoot();
-            break;
-        case AppState::CONFIG_LOAD:
-            stateConfigLoad();
-            break;
-        case AppState::WIFI_CONNECT:
-            stateWiFiConnect();
-            break;
-        case AppState::GATEWAY_CONNECT:
-            stateGatewayConnect();
-            break;
-        case AppState::READY:
-            stateReady();
-            break;
-        case AppState::VOICE_INPUT:
-            stateVoiceInput();
-            break;
-        case AppState::THINKING:
-            stateThinking();
-            break;
-        case AppState::SPEAKING:
-            stateSpeaking();
-            break;
-        case AppState::ERROR:
-            stateError();
-            break;
-        case AppState::ANCIENT_MODE:
-            stateAncientMode();
-            break;
-    }
+    g_app.audio.update();
+    g_app.websocket.update();
+    g_app.state_machine.update();
     
     // Update WiFi status
-    updateWiFiStatus();
+    if (now - g_app.last_wifi_check >= 1000) {
+        updateWiFiStatus();
+        g_app.last_wifi_check = now;
+    }
+    
+    // Update display at ~30 FPS
+    if (now - g_app.last_display_update >= DISPLAY_UPDATE_INTERVAL_MS) {
+        updateDisplay();
+        g_app.last_display_update = now;
+    }
+    
+    // Update status bar
+    if (now - g_app.last_status_update >= STATUS_UPDATE_INTERVAL_MS) {
+        updateStatusBar();
+        g_app.last_status_update = now;
+    }
+    
+    // Process incoming WebSocket messages
+    ProtocolMessage msg;
+    while (g_app.websocket.receive(msg)) {
+        processIncomingMessage(msg);
+    }
+    
+    // Process incoming audio packets
+    EncodedAudioPacket audio_packet;
+    while (g_app.audio.readEncodedPacket(audio_packet)) {
+        sendAudioToGateway(audio_packet);
+    }
+    
+    // Ancient mode timeout check
+    if (g_app.ancient_mode_active && 
+        (now - g_app.ancient_mode_start > 300000)) {  // 5 minutes
+        exitAncientMode();
+    }
     
     delay(MAIN_LOOP_DELAY_MS);
 }
 
 // =============================================================================
-// State Machine Implementation
+// Configuration
 // =============================================================================
 
-void changeState(AppState new_state) {
-    if (g_app.state == new_state) return;
+bool loadConfiguration() {
+    // TODO: Load from SPIFFS/LittleFS config file
+    // For now, use default/test configuration
     
-    g_app.previous_state = g_app.state;
-    g_app.state = new_state;
-    g_app.state_enter_time = millis();
+    // WiFi configuration
+    // These should come from config file
+    strlcpy(g_app.context.config.wifi_ssid, "YOUR_WIFI_SSID", sizeof(g_app.context.config.wifi_ssid));
+    strlcpy(g_app.context.config.wifi_password, "YOUR_WIFI_PASSWORD", sizeof(g_app.context.config.wifi_password));
     
-    Serial.printf("State: %d -> %d\n", g_app.previous_state, new_state);
+    // Gateway configuration
+    strlcpy(g_app.context.config.gateway_url, "ws://your-gateway:8765/ws", sizeof(g_app.context.config.gateway_url));
+    strlcpy(g_app.context.config.device_id, "cardputer-001", sizeof(g_app.context.config.device_id));
+    strlcpy(g_app.context.config.device_name, "OpenClaw Cardputer", sizeof(g_app.context.config.device_name));
+    strlcpy(g_app.context.config.api_key, "", sizeof(g_app.context.config.api_key));
     
-    // State exit actions
-    switch (g_app.previous_state) {
-        case AppState::VOICE_INPUT:
-            g_app.audio.stop();
-            g_app.display.setAudioStatus(AudioStatus::IDLE);
-            g_app.gateway.sendAudio("", true);
-            g_app.avatar.setMood(Mood::IDLE);
-            break;
-        case AppState::SPEAKING:
-            g_app.avatar.stopSpeaking();
-            break;
-        case AppState::THINKING:
-            g_app.avatar.setMood(Mood::IDLE);
-            break;
-        case AppState::ANCIENT_MODE:
-            g_app.avatar.setAncientMode(false);
-            g_app.ancient_mode_active = false;
-            break;
-        default:
-            break;
-    }
+    // WebSocket configuration
+    g_app.ws_config.host = "your-gateway";
+    g_app.ws_config.port = 8765;
+    g_app.ws_config.path = "/ws";
+    g_app.ws_config.use_ssl = false;
+    g_app.ws_config.device_id = g_app.context.config.device_id;
+    g_app.ws_config.device_name = g_app.context.config.device_name;
+    g_app.ws_config.firmware_version = FIRMWARE_VERSION;
+    g_app.ws_config.api_key = g_app.context.config.api_key;
     
-    // State entry actions
-    switch (new_state) {
-        case AppState::VOICE_INPUT:
-            g_app.display.addMessage("Listening...", MessageType::STATUS);
-            g_app.audio.start();
-            g_app.avatar.setMood(Mood::LISTENING);
-            g_app.avatar.lookAt(InputSource::MIC);
+    // Audio configuration
+    g_app.audio_config.sample_rate = 16000;
+    g_app.audio_config.codec = AudioCodec::OPUS;
+    g_app.audio_config.frame_duration_ms = 60;
+    g_app.audio_config.vad_enabled = true;
+    g_app.audio_config.vad_threshold = 500;
+    
+    // Display configuration
+    g_app.display_config.brightness = 128;
+    g_app.display_config.auto_scroll = true;
+    
+    return true;
+}
+
+// =============================================================================
+// State Machine Setup
+// =============================================================================
+
+// Polyfill for std::make_unique (C++14 feature) for C++11 compatibility
+#if __cplusplus < 201402L
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args) {
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+#else
+using std::make_unique;
+#endif
+
+void setupStateMachine() {
+    // Create states
+    auto boot_state = make_unique<State>(AppState::BOOT, "Boot");
+    auto config_loading = make_unique<State>(AppState::CONFIG_LOADING, "ConfigLoading");
+    auto wifi_connecting = make_unique<State>(AppState::WIFI_CONNECTING, "WiFiConnecting");
+    auto gateway_connecting = make_unique<State>(AppState::GATEWAY_CONNECTING, "GatewayConnecting");
+    auto authenticating = make_unique<State>(AppState::AUTHENTICATING, "Authenticating");
+    auto ready = make_unique<State>(AppState::READY, "Ready");
+    auto voice_input = make_unique<State>(AppState::VOICE_INPUT, "VoiceInput");
+    auto ai_processing = make_unique<State>(AppState::AI_PROCESSING, "AIProcessing");
+    auto ai_responding = make_unique<State>(AppState::AI_RESPONDING, "AIResponding");
+    auto ancient_mode = make_unique<State>(AppState::ANCIENT_MODE, "AncientMode");
+    auto error_state = make_unique<State>(AppState::ERROR_STATE, "Error");
+    
+    // Boot state transitions
+    boot_state->addTransition(AppEvent::BOOT_COMPLETE, AppState::CONFIG_LOADING);
+    boot_state->setTimeout(2000, AppState::CONFIG_LOADING);
+    
+    // Config loading transitions
+    config_loading->addTransition(AppEvent::CONFIG_LOADED, AppState::WIFI_CONNECTING);
+    config_loading->addTransition(AppEvent::CONFIG_ERROR, AppState::ERROR_STATE);
+    
+    // WiFi connecting transitions
+    wifi_connecting->addTransition(AppEvent::WIFI_CONNECTED, AppState::GATEWAY_CONNECTING);
+    wifi_connecting->addTransition(AppEvent::WIFI_ERROR, AppState::ERROR_STATE);
+    wifi_connecting->setTimeout(WIFI_CONNECT_TIMEOUT_MS, AppState::ERROR_STATE);
+    
+    // Gateway connecting transitions
+    gateway_connecting->addTransition(AppEvent::GATEWAY_CONNECTED, AppState::AUTHENTICATING);
+    gateway_connecting->addTransition(AppEvent::GATEWAY_ERROR, AppState::ERROR_STATE);
+    gateway_connecting->addTransition(AppEvent::WIFI_DISCONNECTED, AppState::WIFI_CONNECTING);
+    
+    // Authenticating transitions
+    authenticating->addTransition(AppEvent::AUTHENTICATED, AppState::READY);
+    authenticating->addTransition(AppEvent::AUTH_FAILED, AppState::ERROR_STATE);
+    authenticating->setTimeout(10000, AppState::ERROR_STATE);
+    
+    // Ready state transitions
+    ready->addTransition(AppEvent::VOICE_KEY_PRESSED, AppState::VOICE_INPUT);
+    ready->addTransition(AppEvent::TEXT_SUBMITTED, AppState::AI_PROCESSING);
+    ready->addTransition(AppEvent::ANCIENT_MODE_TRIGGER, AppState::ANCIENT_MODE);
+    ready->addTransition(AppEvent::WIFI_DISCONNECTED, AppState::WIFI_CONNECTING);
+    ready->addTransition(AppEvent::GATEWAY_DISCONNECTED, AppState::GATEWAY_CONNECTING);
+    
+    // Voice input transitions
+    voice_input->addTransition(AppEvent::VOICE_STOPPED, AppState::AI_PROCESSING);
+    voice_input->addTransition(AppEvent::VOICE_KEY_PRESSED, AppState::READY);
+    voice_input->setTimeout(30000, AppState::READY);  // 30 second timeout
+    
+    // AI processing transitions
+    ai_processing->addTransition(AppEvent::AI_RESPONSE_CHUNK, AppState::AI_RESPONDING);
+    ai_processing->addTransition(AppEvent::AI_RESPONSE_COMPLETE, AppState::READY);
+    ai_processing->addTransition(AppEvent::AI_ERROR, AppState::READY);
+    ai_processing->setTimeout(60000, AppState::READY);  // 60 second timeout
+    
+    // AI responding transitions
+    ai_responding->addTransition(AppEvent::AI_RESPONSE_COMPLETE, AppState::READY);
+    ai_responding->addTransition(AppEvent::AI_RESPONSE_CHUNK, AppState::AI_RESPONDING);
+    
+    // Ancient mode transitions
+    ancient_mode->addTransition(AppEvent::ANCIENT_MODE_TRIGGER, AppState::READY);
+    ancient_mode->addTransition(AppEvent::TEXT_SUBMITTED, AppState::AI_PROCESSING);
+    ancient_mode->setTimeout(300000, AppState::READY);  // 5 minute timeout
+    
+    // Error state transitions
+    error_state->addTransition(AppEvent::ERROR_RECOVERED, AppState::WIFI_CONNECTING);
+    error_state->addTransition(AppEvent::FORCE_RECONNECT, AppState::WIFI_CONNECTING);
+    error_state->setTimeout(5000, AppState::WIFI_CONNECTING);  // Auto-retry after 5s
+    
+    // Set state entry/exit actions
+    voice_input->setEntryAction([]() {
+        g_app.display.addMessage("Listening...", DisplayMessageType::STATUS_MSG);
+        g_app.display.setAudioStatus(AudioIndicator::LISTENING);
+        g_app.audio.start();
+    });
+    
+    voice_input->setExitAction([]() {
+        g_app.audio.stop();
+        g_app.display.setAudioStatus(AudioIndicator::IDLE);
+    });
+    
+    ai_processing->setEntryAction([]() {
+        g_app.display.setAudioStatus(AudioIndicator::PROCESSING);
+    });
+    
+    ai_responding->setEntryAction([]() {
+        g_app.display.setAudioStatus(AudioIndicator::SPEAKING);
+    });
+    
+    ai_responding->setExitAction([]() {
+        g_app.display.setAudioStatus(AudioIndicator::IDLE);
+    });
+    
+    ancient_mode->setEntryAction([]() {
+        enterAncientMode();
+    });
+    
+    ancient_mode->setExitAction([]() {
+        exitAncientMode();
+    });
+    
+    // Add states to machine
+    g_app.state_machine.addState(std::move(boot_state));
+    g_app.state_machine.addState(std::move(config_loading));
+    g_app.state_machine.addState(std::move(wifi_connecting));
+    g_app.state_machine.addState(std::move(gateway_connecting));
+    g_app.state_machine.addState(std::move(authenticating));
+    g_app.state_machine.addState(std::move(ready));
+    g_app.state_machine.addState(std::move(voice_input));
+    g_app.state_machine.addState(std::move(ai_processing));
+    g_app.state_machine.addState(std::move(ai_responding));
+    g_app.state_machine.addState(std::move(ancient_mode));
+    g_app.state_machine.addState(std::move(error_state));
+    
+    // Set state change callback
+    g_app.state_machine.setOnStateChange(onStateChange);
+    
+    // Start with boot event
+    g_app.state_machine.postEvent(AppEvent::BOOT_COMPLETE);
+}
+
+void onStateChange(AppState from, AppState to) {
+    Serial.printf("State: %s -> %s\n", appStateToString(from), appStateToString(to));
+    
+    g_app.context.state.current_state = to;
+    
+    // Update display based on state
+    switch (to) {
+        case AppState::WIFI_CONNECTING:
+            g_app.display.renderConnectionScreen(g_app.context.config.wifi_ssid);
+            connectWiFi();
             break;
+            
+        case AppState::GATEWAY_CONNECTING:
+            g_app.websocket.connect();
+            break;
+            
         case AppState::READY:
             g_app.display.clearInput();
-            g_app.avatar.setMood(Mood::IDLE);
-            g_app.avatar.lookAt(InputSource::CENTER);
+            g_app.display.setConnectionStatus(ConnectionIndicator::CONNECTED);
             break;
-        case AppState::THINKING:
-            g_app.avatar.setMood(Mood::THINKING);
-            g_app.avatar.lookAt(InputSource::USER);
+            
+        case AppState::ERROR_STATE:
+            g_app.display.setConnectionStatus(ConnectionIndicator::ERROR);
             break;
-        case AppState::SPEAKING:
-            g_app.avatar.setMood(Mood::SPEAKING);
-            g_app.avatar.lookAt(InputSource::USER);
-            break;
-        case AppState::ERROR:
-            g_app.avatar.triggerError();
-            break;
-        case AppState::ANCIENT_MODE:
-            g_app.ancient_mode_active = true;
-            g_app.avatar.setAncientMode(true);
-            g_app.display.addMessage("Ancient wisdom awakened...", MessageType::STATUS);
-            break;
+            
         default:
             break;
     }
 }
 
-void stateBoot() {
-    // Short boot delay then move to config load
-    if (millis() - g_app.state_enter_time > 2000) {
-        changeState(AppState::CONFIG_LOAD);
-    }
-}
+// =============================================================================
+// WebSocket Callbacks
+// =============================================================================
 
-void stateConfigLoad() {
-    // Initialize configuration manager
-    if (!g_app.config.begin()) {
-        g_app.display.showErrorScreen(g_app.config.getLastError());
-        changeState(AppState::ERROR);
-        return;
-    }
-    
-    // Print config for debugging
-    g_app.config.printConfig();
-    
-    // Check if WiFi is configured
-    if (!g_app.config.wifi().isValid()) {
-        g_app.display.showErrorScreen("WiFi not configured");
-        changeState(AppState::ERROR);
-        return;
-    }
-    
-    // Initialize keyboard
-    g_app.keyboard.begin();
-    g_app.keyboard.setCallback(&s_keyboard_callback);
-    
-    // Initialize audio
-    g_app.audio.begin(g_app.config.audio());
-    g_app.audio.setCallback(&s_audio_callback);
-    
-    // Initialize gateway client
-    g_app.gateway.begin(g_app.config.gateway(), g_app.config.device());
-    g_app.gateway.setCallback(&s_gateway_callback);
-    
-    // Initialize avatar
-    g_app.avatar.begin(&M5Cardputer.Display);
-    g_app.avatar.setMood(Mood::IDLE);
-    
-    changeState(AppState::WIFI_CONNECT);
-}
-
-void stateWiFiConnect() {
-    // Show connection screen
-    g_app.display.showConnectionScreen(g_app.config.wifi().ssid.c_str());
-    
-    // Attempt connection
-    connectWiFi();
-    
-    // Wait for connection
-    uint32_t elapsed = millis() - g_app.state_enter_time;
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        g_app.wifi_connected = true;
-        g_app.display.addMessagef(MessageType::STATUS, 
-            "WiFi connected: %s", WiFi.localIP().toString().c_str());
-        g_app.avatar.setMood(Mood::LISTENING);  // Attentive
-        changeState(AppState::GATEWAY_CONNECT);
-    } else if (elapsed > WIFI_CONNECT_TIMEOUT_MS) {
-        g_app.display.addMessage("WiFi connection timeout", MessageType::ERROR);
-        g_app.avatar.triggerError();
-        g_app.last_wifi_reconnect = millis();
-        changeState(AppState::ERROR);
-    }
-}
-
-void stateGatewayConnect() {
-    if (!g_app.wifi_connected) {
-        changeState(AppState::WIFI_CONNECT);
-        return;
-    }
-    
-    // Initiate gateway connection
-    if (g_app.gateway.getState() == ConnectionState::DISCONNECTED) {
-        g_app.gateway.connect();
-    }
-    
-    // Wait for authentication (handled in callback)
-    uint32_t elapsed = millis() - g_app.state_enter_time;
-    if (elapsed > g_app.config.gateway().connection_timeout_ms &&
-        !g_app.gateway_ready) {
-        g_app.display.addMessage("Gateway connection timeout", MessageType::ERROR);
-        g_app.avatar.triggerError();
-        changeState(AppState::ERROR);
-    }
-}
-
-void stateReady() {
-    // Normal operation - handled by callbacks
-    
-    // Check for connection loss
-    if (!g_app.wifi_connected) {
-        changeState(AppState::WIFI_CONNECT);
-        return;
-    }
-    
-    if (!g_app.gateway.isConnected() && !g_app.gateway_ready) {
-        changeState(AppState::GATEWAY_CONNECT);
-        return;
-    }
-    
-    // Return to idle mood if not already
-    if (g_app.avatar.getCurrentMood() != Mood::IDLE) {
-        g_app.avatar.setMood(Mood::IDLE);
-    }
-}
-
-void stateVoiceInput() {
-    // Audio capture is handled in callback
-    
-    // Check for connection loss
-    if (!g_app.wifi_connected) {
-        changeState(AppState::WIFI_CONNECT);
-        return;
-    }
-    
-    // Check for voice timeout (30 seconds max)
-    uint32_t elapsed = millis() - g_app.state_enter_time;
-    if (elapsed > 30000) {
-        g_app.display.addMessage("Voice timeout", MessageType::STATUS);
-        changeState(AppState::READY);
-    }
-}
-
-void stateThinking() {
-    // Wait for response to complete
-    // State transitions handled in gateway callback
-    
-    // Timeout after 60 seconds
-    uint32_t elapsed = millis() - g_app.state_enter_time;
-    if (elapsed > 60000) {
-        g_app.display.addMessage("Response timeout", MessageType::ERROR);
-        changeState(AppState::READY);
-    }
-}
-
-void stateSpeaking() {
-    // Wait for speaking animation to complete
-    if (!g_app.avatar.isSpeaking()) {
-        changeState(AppState::READY);
-    }
-    
-    // Timeout after response complete + 5 seconds
-    uint32_t elapsed = millis() - g_app.state_enter_time;
-    if (elapsed > 30000) {
-        changeState(AppState::READY);
-    }
-}
-
-void stateError() {
-    // Try to recover after delay
-    uint32_t elapsed = millis() - g_app.state_enter_time;
-    
-    if (elapsed > 5000) {
-        // Try to reconnect WiFi if needed
-        if (!g_app.wifi_connected) {
-            changeState(AppState::WIFI_CONNECT);
-        } else if (!g_app.gateway_ready) {
-            changeState(AppState::GATEWAY_CONNECT);
-        } else {
-            changeState(AppState::READY);
+void setupWebSocketCallbacks() {
+    g_app.websocket.onEvent([](WebSocketEvent event, const void* data) {
+        switch (event) {
+            case WebSocketEvent::CONNECTED:
+                Serial.println("WebSocket connected");
+                g_app.state_machine.postEvent(AppEvent::GATEWAY_CONNECTED);
+                break;
+                
+            case WebSocketEvent::DISCONNECTED:
+                Serial.println("WebSocket disconnected");
+                g_app.state_machine.postEvent(AppEvent::GATEWAY_DISCONNECTED);
+                break;
+                
+            case WebSocketEvent::AUTHENTICATED:
+                Serial.println("Authenticated");
+                g_app.context.state.authenticated = true;
+                g_app.state_machine.postEvent(AppEvent::AUTHENTICATED);
+                break;
+                
+            case WebSocketEvent::AUTH_FAILED:
+                Serial.println("Auth failed");
+                g_app.state_machine.postEvent(AppEvent::AUTH_FAILED);
+                break;
+                
+            case WebSocketEvent::MESSAGE_RECEIVED: {
+                auto* msg = static_cast<const ProtocolMessage*>(data);
+                processIncomingMessage(*msg);
+                break;
+            }
+                
+            case WebSocketEvent::ERROR:
+                Serial.println("WebSocket error");
+                g_app.state_machine.postEvent(AppEvent::GATEWAY_ERROR);
+                break;
+                
+            default:
+                break;
         }
-    }
+    });
 }
 
-void stateAncientMode() {
-    // Ancient mode stays active until manually exited (Fn+A)
-    // Or after 5 minutes of inactivity
-    uint32_t elapsed = millis() - g_app.last_activity;
-    if (elapsed > 300000) {  // 5 minutes
-        changeState(AppState::READY);
-    }
-}
-
-// =============================================================================
-// Avatar Update
-// =============================================================================
-
-void updateAvatar() {
-    static uint32_t lastUpdate = 0;
-    uint32_t now = millis();
-    float deltaMs = now - lastUpdate;
-    lastUpdate = now;
-    
-    // Update avatar animation
-    g_app.avatar.update(deltaMs);
-    
-    // Render avatar (top portion of screen)
-    g_app.avatar.render();
-}
-
-// =============================================================================
-// WiFi Functions
-// =============================================================================
-
-void connectWiFi() {
-    const WiFiConfig& wifi = g_app.config.wifi();
-    
-    Serial.printf("Connecting to WiFi: %s\n", wifi.ssid.c_str());
-    
-    WiFi.mode(WIFI_STA);
-    
-    if (!wifi.dhcp && wifi.static_ip.length() > 0) {
-        IPAddress ip, gateway, subnet;
-        ip.fromString(wifi.static_ip);
-        gateway.fromString(wifi.gateway);
-        subnet.fromString(wifi.subnet);
-        WiFi.config(ip, gateway, subnet);
-    }
-    
-    WiFi.begin(wifi.ssid.c_str(), wifi.password.c_str());
-}
-
-void disconnectWiFi() {
-    WiFi.disconnect();
-    g_app.wifi_connected = false;
-}
-
-void updateWiFiStatus() {
-    static int8_t last_rssi = 0;
-    
-    bool currently_connected = (WiFi.status() == WL_CONNECTED);
-    
-    if (currently_connected != g_app.wifi_connected) {
-        g_app.wifi_connected = currently_connected;
-        if (currently_connected) {
-            Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
-        } else {
-            Serial.println("WiFi disconnected");
-        }
-    }
-    
-    // Update signal strength
-    if (currently_connected) {
-        int8_t rssi = WiFi.RSSI();
-        if (abs(rssi - last_rssi) > 5) {
-            g_app.display.setWiFiSignal(rssi);
-            last_rssi = rssi;
-        }
-    } else {
-        g_app.display.setWiFiSignal(-100);
-    }
-    
-    // Auto-reconnect
-    if (!currently_connected && 
-        millis() - g_app.last_wifi_reconnect > WIFI_RECONNECT_INTERVAL_MS) {
-        g_app.last_wifi_reconnect = millis();
-        Serial.println("WiFi reconnecting...");
-        WiFi.reconnect();
-    }
-}
-
-// =============================================================================
-// Communication Functions
-// =============================================================================
-
-void sendTextMessage(const char* text) {
-    if (!g_app.gateway.isReady()) {
-        g_app.display.addMessage("Not connected to gateway", MessageType::ERROR);
-        return;
-    }
-    
-    // Set thinking mood while waiting
-    g_app.avatar.setMood(Mood::THINKING);
-    changeState(AppState::THINKING);
-    
-    if (!g_app.gateway.sendText(text)) {
-        g_app.display.addMessage("Failed to send message", MessageType::ERROR);
-        g_app.avatar.triggerError();
-    }
-}
-
-void sendAudioChunk(const uint8_t* data, size_t len, bool final) {
-    if (!g_app.gateway.isReady()) return;
-    
-    g_app.gateway.sendAudioRaw(data, len, final);
-}
-
-void handleGatewayMessage(const GatewayMessage& msg) {
-    // Handle custom messages not processed by callback
-    switch (msg.type) {
-        case GatewayMessageType::COMMAND: {
-            // Process command from gateway
-            const char* cmd = msg.payload.c_str();
-            if (strcmp(cmd, "blink") == 0) {
-                g_app.avatar.blink(BlinkType::SINGLE);
-            } else if (strcmp(cmd, "judge") == 0) {
-                g_app.avatar.setMood(Mood::JUDGING);
-                g_app.avatar.blink(BlinkType::SLOW);
-            } else if (strcmp(cmd, "excited") == 0) {
-                g_app.avatar.setMood(Mood::EXCITED);
+void processIncomingMessage(const ProtocolMessage& msg) {
+    switch (msg.getType()) {
+        case MessageType::RESPONSE:
+        case MessageType::RESPONSE_FINAL: {
+            String text;
+            if (msg.getJsonPayload(text)) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, text);
+                if (!err) {
+                    const char* response_text = doc["text"] | "";
+                    bool is_final = doc["is_final"] | true;
+                    
+                    g_app.display.addMessage(response_text, 
+                        is_final ? DisplayMessageType::AI_MSG : DisplayMessageType::STATUS_MSG);
+                    
+                    if (is_final) {
+                        g_app.state_machine.postEvent(AppEvent::AI_RESPONSE_COMPLETE);
+                    } else {
+                        g_app.state_machine.postEvent(AppEvent::AI_RESPONSE_CHUNK);
+                    }
+                }
             }
             break;
         }
+            
+        case MessageType::STATUS: {
+            String text;
+            if (msg.getJsonPayload(text)) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, text);
+                if (!err) {
+                    const char* status = doc["status"] | "";
+                    g_app.display.setStatusText(status);
+                }
+            }
+            break;
+        }
+            
+        case MessageType::ERROR: {
+            String text;
+            if (msg.getJsonPayload(text)) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, text);
+                if (!err) {
+                    const char* error = doc["error"] | "Unknown error";
+                    g_app.display.addMessage(error, DisplayMessageType::ERROR_MSG);
+                }
+            }
+            g_app.state_machine.postEvent(AppEvent::AI_ERROR);
+            break;
+        }
+            
         default:
             break;
     }
 }
 
+void sendTextToGateway(const char* text) {
+    if (!g_app.websocket.isAuthenticated()) {
+        g_app.display.addMessage("Not connected", DisplayMessageType::ERROR_MSG);
+        return;
+    }
+    
+    if (!g_app.websocket.sendText(text)) {
+        g_app.display.addMessage("Failed to send", DisplayMessageType::ERROR_MSG);
+    } else {
+        g_app.context.stats.messages_sent++;
+    }
+}
+
+void sendAudioToGateway(const EncodedAudioPacket& packet) {
+    if (!g_app.websocket.isAuthenticated()) return;
+    
+    // Send audio packet
+    g_app.websocket.sendAudio(packet.data.get(), packet.length, packet.is_final);
+}
+
 // =============================================================================
-// Special Features
+// Audio Callbacks
 // =============================================================================
 
-void checkAncientModeTrigger(const char* text) {
-    // Check for ancient mode trigger phrases
+void setupAudioCallbacks() {
+    g_app.audio.onEvent([](AudioEvent event, const void* data) {
+        switch (event) {
+            case AudioEvent::VOICE_DETECTED:
+                g_app.display.setAudioStatus(AudioIndicator::LISTENING);
+                break;
+                
+            case AudioEvent::VOICE_LOST:
+                // Voice ended, could trigger processing
+                break;
+                
+            case AudioEvent::ERROR:
+                Serial.println("Audio error");
+                break;
+                
+            default:
+                break;
+        }
+    });
+}
+
+// =============================================================================
+// Keyboard Callbacks
+// =============================================================================
+
+void setupKeyboardCallbacks() {
+    g_app.keyboard.onEvent([](KeyboardEvent event, const void* data) {
+        switch (event) {
+            case KeyboardEvent::KEY_PRESSED: {
+                auto* key_event = static_cast<const KeyEvent*>(data);
+                
+                // Check for voice toggle key
+                if (key_event->special == SpecialKey::VOICE_TOGGLE) {
+                    g_app.state_machine.postEvent(AppEvent::VOICE_KEY_PRESSED);
+                    return;
+                }
+                
+                // Check for ancient mode trigger (Fn+A)
+                if (key_event->fn && key_event->character == 'a') {
+                    g_app.state_machine.postEvent(AppEvent::ANCIENT_MODE_TRIGGER);
+                    return;
+                }
+                break;
+            }
+                
+            case KeyboardEvent::INPUT_SUBMITTED: {
+                auto* text = static_cast<const char*>(data);
+                
+                // Check for ancient mode trigger phrases
+                if (checkAncientModeTrigger(text)) {
+                    g_app.state_machine.postEvent(AppEvent::ANCIENT_MODE_TRIGGER);
+                    return;
+                }
+                
+                // Display user message
+                g_app.display.addMessage(text, DisplayMessageType::USER_MSG);
+                
+                // Send to gateway
+                sendTextToGateway(text);
+                
+                // Trigger state transition
+                g_app.state_machine.postEvent(AppEvent::TEXT_SUBMITTED);
+                break;
+            }
+                
+            case KeyboardEvent::INPUT_CHANGED: {
+                auto* buffer = static_cast<const InputBuffer*>(data);
+                g_app.display.setInputText(buffer->getText(), buffer->getCursor());
+                break;
+            }
+                
+            default:
+                break;
+        }
+    });
+}
+
+// =============================================================================
+// WiFi Management
+// =============================================================================
+
+void connectWiFi() {
+    Serial.printf("Connecting to WiFi: %s\n", g_app.context.config.wifi_ssid);
+    
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(g_app.context.config.wifi_ssid, g_app.context.config.wifi_password);
+    
+    g_app.wifi_connect_start = millis();
+}
+
+void updateWiFiStatus() {
+    static bool was_connected = false;
+    bool is_connected = (WiFi.status() == WL_CONNECTED);
+    
+    if (is_connected != was_connected) {
+        was_connected = is_connected;
+        
+        if (is_connected) {
+            Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
+            g_app.context.state.wifi_connected = true;
+            g_app.state_machine.postEvent(AppEvent::WIFI_CONNECTED);
+        } else {
+            Serial.println("WiFi disconnected");
+            g_app.context.state.wifi_connected = false;
+            g_app.state_machine.postEvent(AppEvent::WIFI_DISCONNECTED);
+        }
+    }
+    
+    // Update WiFi signal strength
+    if (is_connected) {
+        int8_t rssi = WiFi.RSSI();
+        g_app.display.setWiFiSignal(rssi);
+    }
+    
+    // Auto-reconnect if disconnected
+    if (!is_connected && 
+        millis() - g_app.wifi_connect_start > WIFI_RECONNECT_INTERVAL_MS) {
+        WiFi.reconnect();
+        g_app.wifi_connect_start = millis();
+    }
+}
+
+// =============================================================================
+// Display Management
+// =============================================================================
+
+void updateDisplay() {
+    // Update avatar animation if needed
+    // This would call into the avatar system
+    
+    // Redraw display
+    g_app.display.renderMainScreen();
+}
+
+void updateStatusBar() {
+    // Update connection status
+    if (g_app.websocket.isAuthenticated()) {
+        g_app.display.setConnectionStatus(ConnectionIndicator::CONNECTED);
+    } else if (g_app.websocket.isConnected()) {
+        g_app.display.setConnectionStatus(ConnectionIndicator::CONNECTING);
+    } else {
+        g_app.display.setConnectionStatus(ConnectionIndicator::DISCONNECTED);
+    }
+    
+    // Update audio status based on state
+    switch (g_app.state_machine.getCurrentState()) {
+        case AppState::VOICE_INPUT:
+            g_app.display.setAudioStatus(AudioIndicator::LISTENING);
+            break;
+        case AppState::AI_PROCESSING:
+            g_app.display.setAudioStatus(AudioIndicator::PROCESSING);
+            break;
+        case AppState::AI_RESPONDING:
+            g_app.display.setAudioStatus(AudioIndicator::SPEAKING);
+            break;
+        default:
+            g_app.display.setAudioStatus(AudioIndicator::IDLE);
+            break;
+    }
+}
+
+// =============================================================================
+// Ancient Mode
+// =============================================================================
+
+void enterAncientMode() {
+    g_app.ancient_mode_active = true;
+    g_app.ancient_mode_start = millis();
+    g_app.display.addMessage("Ancient wisdom awakened...", DisplayMessageType::STATUS_MSG);
+    // Additional ancient mode initialization would go here
+}
+
+void exitAncientMode() {
+    g_app.ancient_mode_active = false;
+    g_app.display.addMessage("Returning to present...", DisplayMessageType::STATUS_MSG);
+}
+
+bool checkAncientModeTrigger(const char* text) {
     String t = String(text);
     t.toLowerCase();
     
-    if (t.indexOf("ancient wisdom") >= 0 ||
-        t.indexOf("speak as minerva") >= 0 ||
-        t.indexOf("owl mode") >= 0 ||
-        t.indexOf("by the thirty-seven claws") >= 0) {
-        changeState(AppState::ANCIENT_MODE);
-    }
+    return (t.indexOf("ancient wisdom") >= 0 ||
+            t.indexOf("speak as minerva") >= 0 ||
+            t.indexOf("owl mode") >= 0 ||
+            t.indexOf("by the thirty-seven claws") >= 0);
 }

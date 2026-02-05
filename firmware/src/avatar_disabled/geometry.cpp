@@ -30,7 +30,7 @@ void drawFilledCircle(M5GFX* gfx, int16_t cx, int16_t cy, int16_t r,
     }
 }
 
-void drawAAS Circle(M5GFX* gfx, int16_t cx, int16_t cy, int16_t r, 
+void drawAACircle(M5GFX* gfx, int16_t cx, int16_t cy, int16_t r, 
                      uint16_t color, float thickness) {
     if (!gfx) return;
     
@@ -138,7 +138,11 @@ void drawFilledBezier(M5GFX* gfx, const Vec2& p0, const Vec2& p1,
         y[steps * 2 - 1 - i] = (int16_t)(mt * mt * p0.y + 2 * mt * t * p3.y + t * t * p2.y);
     }
     
-    gfx->fillPolygon(x, y, steps * 2, color);
+    // Draw as triangles since fillPolygon isn't available
+    for (int i = 0; i < steps * 2 - 1; i++) {
+        gfx->fillTriangle(x[0], y[0], x[i], y[i], x[i+1], y[i+1], color);
+    }
+    gfx->fillTriangle(x[0], y[0], x[steps*2-1], y[steps*2-1], x[1], y[1], color);
 }
 
 void drawFeather(M5GFX* gfx, float x, float y, float length, float angle,
@@ -289,7 +293,7 @@ void applySepiaTint(M5GFX* gfx, int16_t x, int16_t y, int16_t w, int16_t h,
             b = (uint8_t)(b * (1 - intensity) + sb * intensity);
             
             // Convert back to RGB565
-            uint16_t newColor = ((r >> 3) << 11) | ((g >> 2) <> 5) | (b >> 3);
+            uint16_t newColor = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
             gfx->drawPixel(px, py, newColor);
         }
     }

@@ -21,7 +21,7 @@ namespace OpenClaw {
 // Audio constants
 constexpr size_t AUDIO_BUFFER_SIZE = 1024;
 constexpr size_t AUDIO_QUEUE_LENGTH = 10;
-constexpr uint8_t I2S_PORT = I2S_NUM_0;
+constexpr i2s_port_t I2S_PORT = I2S_NUM_0;
 
 /**
  * @brief Audio frame structure for queue transmission

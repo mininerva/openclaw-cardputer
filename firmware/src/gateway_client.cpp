@@ -262,7 +262,7 @@ void GatewayClient::setState(ConnectionState state) {
         state_ = state;
         
         if (callback_) {
-            callback_>onStateChanged(state);
+            callback_->onStateChanged(state);
         }
         
         // Track connection start
@@ -282,7 +282,7 @@ void GatewayClient::handleDisconnect(uint16_t code) {
     connection_start_time_ = 0;
     
     if (callback_) {
-        callback_>onDisconnected(code, "Connection closed");
+        callback_->onDisconnected(code, "Connection closed");
     }
 }
 
@@ -323,13 +323,13 @@ void GatewayClient::processIncomingMessage(const JsonDocument& doc) {
             if (success) {
                 setState(ConnectionState::AUTHENTICATED);
                 if (callback_) {
-                    callback_>onAuthenticated();
+                    callback_->onAuthenticated();
                 }
             } else {
                 const char* error = doc["error"] | "Authentication failed";
                 setState(ConnectionState::ERROR);
                 if (callback_) {
-                    callback_>onAuthFailed(error);
+                    callback_->onAuthFailed(error);
                 }
             }
             break;
@@ -339,7 +339,7 @@ void GatewayClient::processIncomingMessage(const JsonDocument& doc) {
             const char* text = doc["payload"] | "";
             bool is_final = doc["is_final"] | true;
             if (callback_) {
-                callback_>onTextResponse(text, is_final);
+                callback_->onTextResponse(text, is_final);
             }
             break;
         }
@@ -347,7 +347,7 @@ void GatewayClient::processIncomingMessage(const JsonDocument& doc) {
         case GatewayMessageType::AUDIO: {
             const char* audio_data = doc["payload"] | "";
             if (callback_) {
-                callback_>onAudioResponse(audio_data);
+                callback_->onAudioResponse(audio_data);
             }
             break;
         }
@@ -361,7 +361,7 @@ void GatewayClient::processIncomingMessage(const JsonDocument& doc) {
             const char* error = doc["payload"] | "Unknown error";
             setState(ConnectionState::ERROR);
             if (callback_) {
-                callback_>onError(error);
+                callback_->onError(error);
             }
             break;
         }
@@ -423,15 +423,15 @@ void GatewayClient::webSocketEvent(WStype_t type, uint8_t* payload, size_t lengt
     
     switch (type) {
         case WStype_DISCONNECTED:
-            instance_>handleDisconnect(0);
+            instance_->handleDisconnect(0);
             break;
             
         case WStype_CONNECTED:
-            instance_>handleConnect();
+            instance_->handleConnect();
             break;
             
         case WStype_TEXT:
-            instance_>handleMessage((const char*)payload);
+            instance_->handleMessage((const char*)payload);
             break;
             
         case WStype_BIN:
@@ -439,9 +439,9 @@ void GatewayClient::webSocketEvent(WStype_t type, uint8_t* payload, size_t lengt
             break;
             
         case WStype_ERROR:
-            instance_>setState(ConnectionState::ERROR);
-            if (instance_>callback_) {
-                instance_>callback_>onError("WebSocket error");
+            instance_->setState(ConnectionState::ERROR);
+            if (instance_->callback_) {
+                instance_->callback_->onError("WebSocket error");
             }
             break;
             

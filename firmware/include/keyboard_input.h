@@ -18,7 +18,7 @@ namespace OpenClaw {
 
 // Keyboard constants
 constexpr size_t KEYBOARD_BUFFER_SIZE = 256;
-constexpr size_t KEYBOARD_QUEUE_LENGTH = 16;
+constexpr size_t KEYBOARD_QUEUE_SIZE = 16;
 constexpr uint32_t KEY_REPEAT_DELAY_MS = 500;
 constexpr uint32_t KEY_REPEAT_RATE_MS = 50;
 constexpr uint32_t KEYBOARD_POLL_INTERVAL_MS = 10;
@@ -47,6 +47,10 @@ enum class SpecialKey : uint8_t {
     FUNCTION_3,
     FUNCTION_4,
     FUNCTION_5,
+    SHIFT_KEY,
+    CTRL_KEY,
+    OPT_KEY,
+    FN_KEY,
     VOICE_KEY,   // Special voice input key
     SEND_KEY     // Send message key
 };
@@ -147,6 +151,18 @@ struct InputBuffer {
     
     void moveCursorEnd() {
         cursor = length;
+    }
+    
+    void setText(const char* text) {
+        clear();
+        size_t len = strlen(text);
+        if (len > KEYBOARD_BUFFER_SIZE - 1) {
+            len = KEYBOARD_BUFFER_SIZE - 1;
+        }
+        memcpy(buffer, text, len);
+        length = len;
+        cursor = len;
+        buffer[length] = '\0';
     }
     
     const char* c_str() const { return buffer; }
@@ -285,6 +301,16 @@ public:
      * @brief Get the last error message
      */
     const char* getLastError() const { return last_error_; }
+    
+    /**
+     * @brief Process key repeat
+     */
+    void processKeyRepeat();
+    
+    /**
+     * @brief Apply shift to character
+     */
+    char applyShift(char c) const;
 
 private:
     // State
@@ -309,6 +335,9 @@ private:
     
     // Queue for async event handling
     QueueHandle_t event_queue_ = nullptr;
+    
+    // Input change tracking
+    bool input_changed_ = false;
     
     // Timing
     uint32_t last_poll_time_ = 0;
