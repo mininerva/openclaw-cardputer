@@ -1,9 +1,10 @@
 /**
  * @file main.cpp
- * @brief OpenClaw Cardputer ADV - Main Application
+ * @brief OpenClaw Cardputer ADV - Main Application with Procedural Avatar
  * 
  * Thin client firmware for M5Stack Cardputer ADV that connects
  * to an OpenClaw gateway for voice and text AI interaction.
+ * Features a real-time procedural owl avatar.
  */
 
 #include <Arduino.h>
@@ -17,18 +18,26 @@
 #include "keyboard_input.h"
 #include "display_manager.h"
 #include "gateway_client.h"
+#include "avatar/procedural_avatar.h"
 
 using namespace OpenClaw;
+using namespace Avatar;
 
 // =============================================================================
 // Constants
 // =============================================================================
 
-constexpr const char* FIRMWARE_VERSION = "1.0.0";
+constexpr const char* FIRMWARE_VERSION = "1.1.0";
 constexpr const char* FIRMWARE_NAME = "OpenClaw Cardputer";
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
-constexpr uint32_t MAIN_LOOP_DELAY_MS = 10;
+constexpr uint32_t MAIN_LOOP_DELAY_MS = 16;  // ~60 FPS for avatar
+constexpr uint32_t AVATAR_UPDATE_MS = 33;    // ~30 FPS avatar update
+
+// Avatar display region
+constexpr int16_t AVATAR_HEIGHT = 128;
+constexpr int16_t TEXT_AREA_Y = AVATAR_HEIGHT;
+constexpr int16_t TEXT_AREA_HEIGHT = 135 - AVATAR_HEIGHT;
 
 // =============================================================================
 // Global State
@@ -41,7 +50,10 @@ enum class AppState {
     GATEWAY_CONNECT,
     READY,
     VOICE_INPUT,
-    ERROR
+    THINKING,
+    SPEAKING,
+    ERROR,
+    ANCIENT_MODE
 };
 
 struct AppContext {
@@ -55,6 +67,7 @@ struct AppContext {
     KeyboardInput keyboard;
     DisplayManager display;
     GatewayClient gateway;
+    ProceduralAvatar avatar;
     
     // Runtime state
     bool wifi_connected = false;
@@ -62,9 +75,13 @@ struct AppContext {
     bool voice_mode = false;
     uint32_t last_wifi_reconnect = 0;
     uint32_t last_activity = 0;
+    uint32_t last_avatar_update = 0;
     
     // Audio buffer for voice streaming
     String audio_buffer;
+    
+    // Ancient mode trigger
+    bool ancient_mode_active = false;
 };
 
 static AppContext g_app;
@@ -80,15 +97,20 @@ void stateWiFiConnect();
 void stateGatewayConnect();
 void stateReady();
 void stateVoiceInput();
+void stateThinking();
+void stateSpeaking();
 void stateError();
+void stateAncientMode();
 
 void connectWiFi();
 void disconnectWiFi();
 void updateWiFiStatus();
+void updateAvatar();
 
 void sendTextMessage(const char* text);
 void sendAudioChunk(const uint8_t* data, size_t len, bool final);
 void handleGatewayMessage(const GatewayMessage& msg);
+void checkAncientModeTrigger(const char* text);
 
 // =============================================================================
 // Callback Classes
@@ -109,6 +131,25 @@ public:
             return;
         }
         
+        // Ancient mode trigger: Fn+A
+        if (event.fn && event.character == 'a') {
+            if (g_app.state == AppState::ANCIENT_MODE) {
+                changeState(AppState::READY);
+            } else {
+                changeState(AppState::ANCIENT_MODE);
+            }
+            return;
+        }
+        
+        // Look at keyboard when typing
+        if (event.isPrintable() && event.pressed) {
+            g_app.avatar.lookAt(InputSource::KEYBOARD);
+            
+            // Reset look after delay
+            static uint32_t last_type_time = 0;
+            last_type_time = millis();
+        }
+        
         // Update activity timestamp
         g_app.last_activity = millis();
     }
@@ -116,8 +157,14 @@ public:
     void onInputSubmit(const char* text) override {
         if (strlen(text) == 0) return;
         
+        // Check for ancient mode trigger phrase
+        checkAncientModeTrigger(text);
+        
         // Display user message
         g_app.display.addMessage(text, MessageType::USER);
+        
+        // Avatar looks at user when sending
+        g_app.avatar.lookAt(InputSource::USER);
         
         // Send to gateway
         sendTextMessage(text);
@@ -149,13 +196,18 @@ public:
     void onVoiceActivity(bool detected) override {
         if (detected) {
             g_app.display.setAudioStatus(AudioStatus::LISTENING);
+            // Avatar looks at mic when voice detected
+            g_app.avatar.lookAt(InputSource::MIC);
         } else {
             g_app.display.setAudioStatus(AudioStatus::IDLE);
+            // Return to center
+            g_app.avatar.lookAt(InputSource::CENTER);
         }
     }
     
     void onAudioError(int error) override {
         g_app.display.addMessagef(MessageType::ERROR, "Audio error: %d", error);
+        g_app.avatar.triggerError();
     }
 };
 
@@ -169,36 +221,46 @@ public:
         g_app.display.addMessagef(MessageType::STATUS, 
             "Gateway disconnected: %d", code);
         g_app.gateway_ready = false;
+        g_app.avatar.setMood(Mood::IDLE);
     }
     
     void onAuthenticated() override {
         g_app.display.addMessage("Authenticated", MessageType::STATUS);
         g_app.gateway_ready = true;
+        g_app.avatar.blink(BlinkType::DOUBLE);  // Happy blink
         changeState(AppState::READY);
     }
     
     void onAuthFailed(const char* error) override {
         g_app.display.addMessagef(MessageType::ERROR, "Auth failed: %s", error);
+        g_app.avatar.triggerError();
         changeState(AppState::ERROR);
     }
     
     void onTextResponse(const char* text, bool is_final) override {
+        // Add to display
         g_app.display.addMessage(text, MessageType::AI);
         
         if (is_final) {
             g_app.display.setAudioStatus(AudioStatus::IDLE);
+            // Avatar speaks the response
+            g_app.avatar.speak(text);
+            changeState(AppState::SPEAKING);
         } else {
             g_app.display.setAudioStatus(AudioStatus::PROCESSING);
+            g_app.avatar.setMood(Mood::THINKING);
+            changeState(AppState::THINKING);
         }
     }
     
     void onAudioResponse(const char* audio_data) override {
-        // Audio response received - could play back if speaker available
+        // Audio response received
         g_app.display.setAudioStatus(AudioStatus::SPEAKING);
     }
     
     void onError(const char* error) override {
         g_app.display.addMessagef(MessageType::ERROR, "Gateway error: %s", error);
+        g_app.avatar.triggerError();
     }
     
     void onStateChanged(ConnectionState state) override {
@@ -209,6 +271,7 @@ public:
             case ConnectionState::CONNECTING:
             case ConnectionState::RECONNECTING:
                 g_app.display.setConnectionStatus(ConnectionStatus::CONNECTING);
+                g_app.avatar.setMood(Mood::LISTENING);  // Attentive while connecting
                 break;
             case ConnectionState::CONNECTED:
             case ConnectionState::AUTHENTICATING:
@@ -219,6 +282,7 @@ public:
                 break;
             case ConnectionState::ERROR:
                 g_app.display.setConnectionStatus(ConnectionStatus::ERROR);
+                g_app.avatar.triggerError();
                 break;
         }
     }
@@ -248,6 +312,7 @@ void setup() {
     Serial.println("\n========================================");
     Serial.println(FIRMWARE_NAME);
     Serial.printf("Version: %s\n", FIRMWARE_VERSION);
+    Serial.println("Procedural Avatar System Enabled");
     Serial.println("========================================\n");
     
     // Initialize display early for boot screen
@@ -259,6 +324,8 @@ void setup() {
 }
 
 void loop() {
+    uint32_t now = millis();
+    
     // Update M5 systems
     M5Cardputer.update();
     
@@ -266,6 +333,12 @@ void loop() {
     g_app.keyboard.update();
     g_app.gateway.update();
     g_app.display.update();
+    
+    // Update avatar at ~30 FPS
+    if (now - g_app.last_avatar_update >= AVATAR_UPDATE_MS) {
+        updateAvatar();
+        g_app.last_avatar_update = now;
+    }
     
     // Process gateway messages
     GatewayMessage msg;
@@ -293,8 +366,17 @@ void loop() {
         case AppState::VOICE_INPUT:
             stateVoiceInput();
             break;
+        case AppState::THINKING:
+            stateThinking();
+            break;
+        case AppState::SPEAKING:
+            stateSpeaking();
+            break;
         case AppState::ERROR:
             stateError();
+            break;
+        case AppState::ANCIENT_MODE:
+            stateAncientMode();
             break;
     }
     
@@ -322,8 +404,18 @@ void changeState(AppState new_state) {
         case AppState::VOICE_INPUT:
             g_app.audio.stop();
             g_app.display.setAudioStatus(AudioStatus::IDLE);
-            // Send final audio marker
             g_app.gateway.sendAudio("", true);
+            g_app.avatar.setMood(Mood::IDLE);
+            break;
+        case AppState::SPEAKING:
+            g_app.avatar.stopSpeaking();
+            break;
+        case AppState::THINKING:
+            g_app.avatar.setMood(Mood::IDLE);
+            break;
+        case AppState::ANCIENT_MODE:
+            g_app.avatar.setAncientMode(false);
+            g_app.ancient_mode_active = false;
             break;
         default:
             break;
@@ -334,9 +426,29 @@ void changeState(AppState new_state) {
         case AppState::VOICE_INPUT:
             g_app.display.addMessage("Listening...", MessageType::STATUS);
             g_app.audio.start();
+            g_app.avatar.setMood(Mood::LISTENING);
+            g_app.avatar.lookAt(InputSource::MIC);
             break;
         case AppState::READY:
             g_app.display.clearInput();
+            g_app.avatar.setMood(Mood::IDLE);
+            g_app.avatar.lookAt(InputSource::CENTER);
+            break;
+        case AppState::THINKING:
+            g_app.avatar.setMood(Mood::THINKING);
+            g_app.avatar.lookAt(InputSource::USER);
+            break;
+        case AppState::SPEAKING:
+            g_app.avatar.setMood(Mood::SPEAKING);
+            g_app.avatar.lookAt(InputSource::USER);
+            break;
+        case AppState::ERROR:
+            g_app.avatar.triggerError();
+            break;
+        case AppState::ANCIENT_MODE:
+            g_app.ancient_mode_active = true;
+            g_app.avatar.setAncientMode(true);
+            g_app.display.addMessage("Ancient wisdom awakened...", MessageType::STATUS);
             break;
         default:
             break;
@@ -380,6 +492,10 @@ void stateConfigLoad() {
     g_app.gateway.begin(g_app.config.gateway(), g_app.config.device());
     g_app.gateway.setCallback(&s_gateway_callback);
     
+    // Initialize avatar
+    g_app.avatar.begin(&M5Cardputer.Display);
+    g_app.avatar.setMood(Mood::IDLE);
+    
     changeState(AppState::WIFI_CONNECT);
 }
 
@@ -397,9 +513,11 @@ void stateWiFiConnect() {
         g_app.wifi_connected = true;
         g_app.display.addMessagef(MessageType::STATUS, 
             "WiFi connected: %s", WiFi.localIP().toString().c_str());
+        g_app.avatar.setMood(Mood::LISTENING);  // Attentive
         changeState(AppState::GATEWAY_CONNECT);
     } else if (elapsed > WIFI_CONNECT_TIMEOUT_MS) {
         g_app.display.addMessage("WiFi connection timeout", MessageType::ERROR);
+        g_app.avatar.triggerError();
         g_app.last_wifi_reconnect = millis();
         changeState(AppState::ERROR);
     }
@@ -421,6 +539,7 @@ void stateGatewayConnect() {
     if (elapsed > g_app.config.gateway().connection_timeout_ms &&
         !g_app.gateway_ready) {
         g_app.display.addMessage("Gateway connection timeout", MessageType::ERROR);
+        g_app.avatar.triggerError();
         changeState(AppState::ERROR);
     }
 }
@@ -437,6 +556,11 @@ void stateReady() {
     if (!g_app.gateway.isConnected() && !g_app.gateway_ready) {
         changeState(AppState::GATEWAY_CONNECT);
         return;
+    }
+    
+    // Return to idle mood if not already
+    if (g_app.avatar.getCurrentMood() != Mood::IDLE) {
+        g_app.avatar.setMood(Mood::IDLE);
     }
 }
 
@@ -457,6 +581,31 @@ void stateVoiceInput() {
     }
 }
 
+void stateThinking() {
+    // Wait for response to complete
+    // State transitions handled in gateway callback
+    
+    // Timeout after 60 seconds
+    uint32_t elapsed = millis() - g_app.state_enter_time;
+    if (elapsed > 60000) {
+        g_app.display.addMessage("Response timeout", MessageType::ERROR);
+        changeState(AppState::READY);
+    }
+}
+
+void stateSpeaking() {
+    // Wait for speaking animation to complete
+    if (!g_app.avatar.isSpeaking()) {
+        changeState(AppState::READY);
+    }
+    
+    // Timeout after response complete + 5 seconds
+    uint32_t elapsed = millis() - g_app.state_enter_time;
+    if (elapsed > 30000) {
+        changeState(AppState::READY);
+    }
+}
+
 void stateError() {
     // Try to recover after delay
     uint32_t elapsed = millis() - g_app.state_enter_time;
@@ -471,6 +620,32 @@ void stateError() {
             changeState(AppState::READY);
         }
     }
+}
+
+void stateAncientMode() {
+    // Ancient mode stays active until manually exited (Fn+A)
+    // Or after 5 minutes of inactivity
+    uint32_t elapsed = millis() - g_app.last_activity;
+    if (elapsed > 300000) {  // 5 minutes
+        changeState(AppState::READY);
+    }
+}
+
+// =============================================================================
+// Avatar Update
+// =============================================================================
+
+void updateAvatar() {
+    static uint32_t lastUpdate = 0;
+    uint32_t now = millis();
+    float deltaMs = now - lastUpdate;
+    lastUpdate = now;
+    
+    // Update avatar animation
+    g_app.avatar.update(deltaMs);
+    
+    // Render avatar (top portion of screen)
+    g_app.avatar.render();
 }
 
 // =============================================================================
@@ -544,8 +719,13 @@ void sendTextMessage(const char* text) {
         return;
     }
     
+    // Set thinking mood while waiting
+    g_app.avatar.setMood(Mood::THINKING);
+    changeState(AppState::THINKING);
+    
     if (!g_app.gateway.sendText(text)) {
         g_app.display.addMessage("Failed to send message", MessageType::ERROR);
+        g_app.avatar.triggerError();
     }
 }
 
@@ -560,9 +740,35 @@ void handleGatewayMessage(const GatewayMessage& msg) {
     switch (msg.type) {
         case GatewayMessageType::COMMAND: {
             // Process command from gateway
+            const char* cmd = msg.payload.c_str();
+            if (strcmp(cmd, "blink") == 0) {
+                g_app.avatar.blink(BlinkType::SINGLE);
+            } else if (strcmp(cmd, "judge") == 0) {
+                g_app.avatar.setMood(Mood::JUDGING);
+                g_app.avatar.blink(BlinkType::SLOW);
+            } else if (strcmp(cmd, "excited") == 0) {
+                g_app.avatar.setMood(Mood::EXCITED);
+            }
             break;
         }
         default:
             break;
+    }
+}
+
+// =============================================================================
+// Special Features
+// =============================================================================
+
+void checkAncientModeTrigger(const char* text) {
+    // Check for ancient mode trigger phrases
+    String t = String(text);
+    t.toLowerCase();
+    
+    if (t.indexOf("ancient wisdom") >= 0 ||
+        t.indexOf("speak as minerva") >= 0 ||
+        t.indexOf("owl mode") >= 0 ||
+        t.indexOf("by the thirty-seven claws") >= 0) {
+        changeState(AppState::ANCIENT_MODE);
     }
 }
