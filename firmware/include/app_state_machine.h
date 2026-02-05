@@ -33,6 +33,7 @@ enum class AppEvent : uint8_t {
     BOOT_COMPLETE,
     CONFIG_LOADED,
     CONFIG_ERROR,
+    ERROR_RECOVERED,
     
     // Connection events
     WIFI_CONNECTED,
@@ -67,7 +68,6 @@ enum class AppEvent : uint8_t {
     
     // Special events
     ANCIENT_MODE_TRIGGER,
-    ERROR_RECOVERED,
     TIMEOUT,
     USER_ACTIVITY,
     
