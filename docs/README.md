@@ -15,6 +15,7 @@ The OpenClaw Cardputer ADV is a thin client implementation that turns the M5Stac
 
 ### Features
 
+- **Procedural Avatar**: Real-time rendered owl face with mood states and animations
 - **Voice Input**: Real-time audio streaming with voice activity detection
 - **Text Input**: Full keyboard support with special key combinations
 - **Display**: Conversation history and status indicators
@@ -72,9 +73,67 @@ The Cardputer ADV uses the following pins:
 |------|----------|
 | Fn + V | Toggle voice input mode |
 | Fn + S | Send message |
+| Fn + A | Toggle Ancient Mode |
 | Ctrl + A | Move cursor to start |
 | Ctrl + E | Move cursor to end |
 | Escape | Clear input |
+
+## Procedural Avatar System
+
+The firmware includes a real-time procedural owl avatar (Minerva) that responds to system state and user interaction.
+
+### Mood States
+
+| State | Trigger | Visual Behavior |
+|-------|---------|-----------------|
+| IDLE | Default | Slow breathing, occasional blink, drifting pupils |
+| LISTENING | Voice input, connecting | Perked ears, focused pupils, slight head tilt |
+| THINKING | Waiting for response | Narrowed eyes, pupil shimmer, faster breathing |
+| SPEAKING | Receiving response | Beak chomping, expressive eyebrows |
+| EXCITED | Special commands | Wide eyes, rapid blinking, feather fluff |
+| JUDGING | Judgment command | Slow blink, side-eye, raised eyebrow |
+| ERROR | Connection/audio error | Glitch shake, X-eyes flash |
+| ANCIENT_MODE | Fn+A or trigger phrase | Sepia tint, runes, glowing pupils |
+
+### Eye Tracking
+
+The avatar's pupils track to different input sources:
+- **Keyboard** (when typing): Slight down-left
+- **Microphone** (when listening): Slight down-right  
+- **User** (when responding): Slight up/center
+- **Center** (idle): Center with subtle drift
+
+### Ancient Mode Trigger Phrases
+
+Say any of these to activate Ancient Mode:
+- "ancient wisdom"
+- "speak as minerva"
+- "owl mode"
+- "by the thirty-seven claws"
+
+Press **Fn+A** to toggle Ancient Mode manually.
+
+### Avatar API (for Developers)
+
+```cpp
+// Set mood
+Avatar::g_avatar.setMood(Avatar::Mood::THINKING);
+
+// Look at input source
+Avatar::g_avatar.lookAt(Avatar::InputSource::MIC);
+
+// Trigger speaking animation
+Avatar::g_avatar.speak("Text to animate");
+
+// Force blink
+Avatar::g_avatar.blink(Avatar::BlinkType::SLOW);
+
+// Trigger error animation
+Avatar::g_avatar.triggerError();
+
+// Toggle ancient mode
+Avatar::g_avatar.setAncientMode(true);
+```
 
 ## Gateway Bridge
 
