@@ -428,9 +428,20 @@ void SettingsMenu::resetToDefaults() {
 }
 
 void SettingsMenu::testConnection() {
-    // This would integrate with WiFi/WebSocket to test
-    // For now, just show a placeholder
-    showMessage("Testing... (TODO)");
+    if (!display_) return;
+    
+    // Show testing message
+    state_ = MenuState::SHOW_MESSAGE;
+    snprintf(message_buffer_, sizeof(message_buffer_), "Testing...");
+    message_timeout_ = millis() + 3000;
+    
+    // In a real implementation, this would:
+    // 1. Test WiFi connection
+    // 2. Test WebSocket connection
+    // 3. Show success/error
+    
+    // For now, just show placeholder
+    // The actual connection testing happens in main loop via WebSocket callbacks
 }
 
 void SettingsMenu::startWiFiScan() {
