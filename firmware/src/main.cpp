@@ -200,6 +200,9 @@ void setup() {
     g_app.initialized = true;
 
     Serial.println("Setup complete");
+
+    // Clear boot screen before entering loop
+    g_app.display.clear();
 }
 
 // =============================================================================
