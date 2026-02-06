@@ -240,8 +240,6 @@ void loop() {
         Avatar::g_avatar.setLowBattery(true);
     }
     
-    // Update lip-sync
-
     // Update settings menu if open
     if (g_app.settings_menu.isOpen()) {
         g_app.settings_menu.update();
