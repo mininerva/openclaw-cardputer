@@ -163,31 +163,39 @@ void setup() {
         Serial.println("Keyboard init failed");
     }
     setupKeyboardCallbacks();
+    delay(500);  // Small delay after keyboard
 
     if (!g_app.audio.begin(g_app.audio_config)) {
         Serial.println("Audio init failed - continuing without audio");
     }
     setupAudioCallbacks();
+    delay(500);  // Small delay after audio
 
     if (!g_app.websocket.begin(g_app.ws_config)) {
         Serial.println("WebSocket init failed");
     }
     setupWebSocketCallbacks();
+    delay(500);  // Small delay after websocket
 
     // Start state machine
     g_app.state_machine.begin();
+    delay(500);  // Small delay after state machine
 
     // Initialize settings menu
     g_app.settings_menu.begin(&g_app.config_manager, &g_app.display);
+    delay(500);  // Small delay after settings
 
     // Initialize avatar (using M5Cardputer's display)
     Avatar::g_avatar.begin(&M5Cardputer.Display);
+    delay(500);  // Small delay after avatar
     
     // Initialize sensors (IMU)
     Avatar::g_sensors.begin();
+    delay(500);  // Small delay after sensors
     
     // Initialize audio-to-avatar bridge
     g_app.avatar_bridge.begin(&g_app.audio, &Avatar::g_avatar);
+    delay(500);  // Small delay after bridge
 
     g_app.initialized = true;
 
